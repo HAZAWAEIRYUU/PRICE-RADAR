@@ -1,0 +1,14 @@
+# PRICE-RADAR
+
+venv/
+__pycache__/
+*.db
+backend/SUPABASE_CREDENTIALS.txt
+node_modules/
+.next/
+out/
+.env*
+.DS_Store
+*.pem
+*.zip
+mobile/
