@@ -107,3 +107,7 @@ class PlanInfo(BaseModel):
     price: Optional[int]
     usage: PlanUsage
 
+class GoogleAuthRequest(BaseModel):
+    code: str
+    redirect_uri: str
+
