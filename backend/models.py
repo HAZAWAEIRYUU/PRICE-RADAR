@@ -12,6 +12,8 @@ class User(Base):
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)
     plan = Column(String, default="free")  # free / pro / enterprise
+    stripe_customer_id = Column(String, nullable=True, index=True)
+    stripe_subscription_id = Column(String, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     products = relationship("Product", back_populates="owner", cascade="all, delete-orphan")

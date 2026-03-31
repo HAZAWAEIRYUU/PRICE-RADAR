@@ -7,3 +7,4 @@ python-multipart
 pydantic
 psycopg2-binary
 gunicorn
+stripe

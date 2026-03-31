@@ -72,14 +72,32 @@ export default function DashboardPricingPage() {
   const handleUpgrade = async () => {
     setUpgrading(true);
     try {
-      const res = await api.post<PlanInfo>("/api/plan/upgrade");
-      setPlanInfo(res.data);
-      setConfirmOpen(false);
-      setSuccessOpen(true);
+      const res = await api.post<{ url: string }>("/api/stripe/create-checkout-session");
+      if (res.data.url) {
+        window.location.href = res.data.url;
+      }
     } catch (err) {
-      console.error("Failed to upgrade:", err);
+      console.error("Failed to initiate checkout:", err);
+      alert("決済セッションの準備に失敗しました。時間をおいて再度お試しください。");
     } finally {
       setUpgrading(false);
+      setConfirmOpen(false);
+    }
+  };
+
+  const [managing, setManaging] = useState(false);
+  const handleManageBilling = async () => {
+    setManaging(true);
+    try {
+      const res = await api.post<{ url: string }>("/api/stripe/create-portal-session");
+      if (res.data.url) {
+        window.location.href = res.data.url;
+      }
+    } catch (err) {
+      console.error("Failed to access billing portal:", err);
+      alert("カスタマーポータルの準備に失敗しました。決済情報が未登録の場合があります。");
+    } finally {
+      setManaging(false);
     }
   };
 
@@ -275,13 +293,27 @@ export default function DashboardPricingPage() {
               ))}
             </ul>
 
-            {isFreePlan && (
+            {isFreePlan ? (
               <Button
                 onClick={() => setConfirmOpen(true)}
                 className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white shadow-lg shadow-emerald-500/20"
               >
                 <Zap className="w-4 h-4 mr-2" />
                 Pro にアップグレード
+              </Button>
+            ) : (
+              <Button
+                onClick={handleManageBilling}
+                disabled={managing}
+                variant="outline"
+                className="w-full border-emerald-500/50 text-emerald-500 hover:bg-emerald-500/10"
+              >
+                {managing ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Crown className="w-4 h-4 mr-2" />
+                )}
+                決済情報を管理する
               </Button>
             )}
           </CardContent>
@@ -298,7 +330,7 @@ export default function DashboardPricingPage() {
             </DialogTitle>
             <DialogDescription>
               Pro プラン（¥1,980/月）にアップグレードしますか？
-              商品登録数が50件に拡大され、すべての機能が利用可能になります。
+              安全なStripeの決済画面へ移動します。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
