@@ -39,7 +39,7 @@ export async function googleLogin(code: string, redirectUri: string) {
 }
 
 export function getGoogleAuthUrl(redirectUri: string): string {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "495560668398-u5oaj3uajn9rrcmotvpo2k7057j5d1sm.apps.googleusercontent.com";
   if (!clientId) return "";
   const params = new URLSearchParams({
     client_id: clientId,
