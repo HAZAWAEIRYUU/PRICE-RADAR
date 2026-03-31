@@ -8,31 +8,34 @@ import auth
 
 router = APIRouter()
 
-stripe.api_key = os.environ.get("STRIPE_API_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_PRICE_ID_PRO = os.environ.get("STRIPE_PRICE_ID_PRO", "")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://price-radar.pages.dev")
+def get_stripe_config():
+    api_key = os.environ.get("STRIPE_API_KEY", "")
+    price_id = os.environ.get("STRIPE_PRICE_ID_PRO", "")
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    frontend_url = os.environ.get("FRONTEND_URL", "https://price-radar.pages.dev")
+    stripe.api_key = api_key
+    return api_key, price_id, webhook_secret, frontend_url
 
 @router.post("/create-checkout-session")
 def create_checkout_session(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(get_db)):
-    if not stripe.api_key or not STRIPE_PRICE_ID_PRO:
-        raise HTTPException(status_code=500, detail="Stripe configuration is missing")
+    api_key, price_id, _, frontend_url = get_stripe_config()
+    if not api_key or not price_id:
+        raise HTTPException(status_code=500, detail=f"Stripe configuration is missing. api_key={'set' if api_key else 'empty'}, price_id={'set' if price_id else 'empty'}")
         
     try:
-        # If user already has a customer ID, use it. Otherwise, let Stripe create one and we'll save it later.
         customer_id = current_user.stripe_customer_id
         
         session_params = {
             "payment_method_types": ["card"],
             "line_items": [
                 {
-                    "price": STRIPE_PRICE_ID_PRO,
+                    "price": price_id,
                     "quantity": 1,
                 },
             ],
             "mode": "subscription",
-            "success_url": f"{FRONTEND_URL}/pricing/success?session_id={{CHECKOUT_SESSION_ID}}",
-            "cancel_url": f"{FRONTEND_URL}/pricing/cancel",
+            "success_url": f"{frontend_url}/pricing/success?session_id={{CHECKOUT_SESSION_ID}}",
+            "cancel_url": f"{frontend_url}/pricing/cancel",
             "client_reference_id": str(current_user.id),
         }
         
@@ -49,7 +52,8 @@ def create_checkout_session(current_user: models.User = Depends(auth.get_current
 
 @router.post("/create-portal-session")
 def create_portal_session(current_user: models.User = Depends(auth.get_current_user)):
-    if not stripe.api_key:
+    api_key, _, _, frontend_url = get_stripe_config()
+    if not api_key:
         raise HTTPException(status_code=500, detail="Stripe configuration is missing")
         
     if not current_user.stripe_customer_id:
@@ -58,7 +62,7 @@ def create_portal_session(current_user: models.User = Depends(auth.get_current_u
     try:
         portalSession = stripe.billing_portal.Session.create(
             customer=current_user.stripe_customer_id,
-            return_url=f"{FRONTEND_URL}/pricing",
+            return_url=f"{frontend_url}/pricing",
         )
         return {"url": portalSession.url}
     except Exception as e:
@@ -66,18 +70,19 @@ def create_portal_session(current_user: models.User = Depends(auth.get_current_u
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request, stripe_signature: str = Header(None), db: Session = Depends(get_db)):
-    if not STRIPE_WEBHOOK_SECRET:
+    _, _, webhook_secret, _ = get_stripe_config()
+    if not webhook_secret:
         raise HTTPException(status_code=500, detail="Webhook secret not configured")
 
     payload = await request.body()
     try:
         event = stripe.Webhook.construct_event(
-            payload, stripe_signature, STRIPE_WEBHOOK_SECRET
+            payload, stripe_signature, webhook_secret
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError as e:
-        raise HTTPException(status_code=400, detail="Invalid signature")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
     # Handle the event
     if event['type'] == 'checkout.session.completed':
