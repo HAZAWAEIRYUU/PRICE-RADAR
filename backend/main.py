@@ -26,7 +26,7 @@ from scraper.tasks import run_scheduled_scraping
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
 
-# Create DB tables
+# Create DB tables (idempotent fallback for local SQLite dev; production uses Alembic)
 models.Base.metadata.create_all(bind=engine)
 logger.info("Database tables initialized")
 
@@ -49,22 +49,18 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Configure CORS
-_prod_origins = [
-    "https://priceradar.space",
-    "https://www.priceradar.space",
-    "https://price-radar.pages.dev",
-]
+_prod_origin_regex = r"https://(www\.)?priceradar\.space|https://([a-z0-9-]+\.)?price-radar\.pages\.dev"
 _dev_origins = [
     "http://localhost:3000",
     "http://localhost:3333",
     "http://localhost:53430",
 ]
-# Include dev origins only when running locally (no DATABASE_URL = local dev)
-origins = _prod_origins if os.environ.get("DATABASE_URL") else _prod_origins + _dev_origins
+_is_production = bool(os.environ.get("DATABASE_URL"))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origin_regex=_prod_origin_regex,
+    allow_origins=[] if _is_production else _dev_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],

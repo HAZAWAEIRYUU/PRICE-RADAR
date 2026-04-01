@@ -36,8 +36,6 @@ export const PLANS = [
       { text: "価格アラート", included: true },
       { text: "価格履歴 無制限", included: true },
       { text: "優先サポート", included: true },
-      { text: "CSV エクスポート", included: true },
-      { text: "API アクセス", included: true },
     ],
     cta: "Proを始める",
     ctaVariant: "default",
