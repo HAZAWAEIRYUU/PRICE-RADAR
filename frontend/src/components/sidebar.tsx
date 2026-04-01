@@ -19,7 +19,7 @@ import { PlanInfo } from "@/lib/types";
 import api from "@/lib/api";
 
 const navItems = [
-  { href: "/", label: "ダッシュボード", icon: LayoutDashboard },
+  { href: "/dashboard", label: "ダッシュボード", icon: LayoutDashboard },
   { href: "/products", label: "商品管理", icon: Package },
   { href: "/pricing", label: "プラン", icon: Crown },
 ];
@@ -55,10 +55,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map((item) => {
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
+          const isActive = pathname.startsWith(item.href);
           return (
             <Link
               key={item.href}
