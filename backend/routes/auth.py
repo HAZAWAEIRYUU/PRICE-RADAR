@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
@@ -7,11 +7,23 @@ import models, schemas, auth
 import httpx
 import os
 import secrets
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter()
 
 @router.post("/auth/register", response_model=schemas.Token)
-def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
+@limiter.limit("3/minute")
+def register(request: Request, user: schemas.UserCreate, db: Session = Depends(get_db)):
+    """
+    ユーザー新規登録 API
+    
+    - **username**: 一意のユーザー名
+    - **password**: パスワード
+    - **email**: (オプション) メールアドレス
+    """
     # Check username uniqueness
     db_user = db.query(models.User).filter(models.User.username == user.username).first()
     if db_user:
@@ -42,7 +54,14 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.post("/auth/login", response_model=schemas.Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """
+    ログイン API (OAuth2 パスワードフロー)
+    
+    - **username**: ユーザー名
+    - **password**: パスワード
+    """
     user = db.query(models.User).filter(models.User.username == form_data.username).first()
     if not user or not auth.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -62,7 +81,8 @@ def get_me(current_user: models.User = Depends(auth.get_current_user)):
     return current_user
 
 @router.post("/auth/google", response_model=schemas.Token)
-async def google_auth(request: schemas.GoogleAuthRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+async def google_auth(request: Request, body: schemas.GoogleAuthRequest, db: Session = Depends(get_db)):
     """Google OAuth2 authentication: exchange code for token, get user info, create/link user."""
     client_id = os.environ.get("GOOGLE_CLIENT_ID")
     client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
@@ -75,10 +95,10 @@ async def google_auth(request: schemas.GoogleAuthRequest, db: Session = Depends(
         token_response = await client.post(
             "https://oauth2.googleapis.com/token",
             data={
-                "code": request.code,
+                "code": body.code,
                 "client_id": client_id,
                 "client_secret": client_secret,
-                "redirect_uri": request.redirect_uri,
+                "redirect_uri": body.redirect_uri,
                 "grant_type": "authorization_code",
             },
         )

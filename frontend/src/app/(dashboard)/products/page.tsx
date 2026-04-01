@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
+import axios from "axios";
+import { toast } from "sonner";
 import { Product, ProductCreate, CompetitorUrlCreate, ProductUpdate } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -146,15 +148,17 @@ export default function ProductsPage() {
           category: formCategory || null,
         };
         await api.put(`/api/products/${editingProduct.id}`, updateData);
-        // Add new URLs (this may need to be handled more robustly depending on backend logic for updating URLs)
-        // For now, let's just attempt to push them or backend might have a different method.
-        // Assuming POST /api/products/{id}/competitors adds them
-        for (const url of validUrls) {
-           // We might want to check if it's already there but the backend doesn't seem to expose a direct PUT for multiple at once cleanly. 
-           // In a real app we'd map IDs. For now, we'll catch errors if it fails.
-           try {
-              await api.post(`/api/products/${editingProduct.id}/competitors`, url);
-           } catch (err) {}
+        // Add new URLs concurrently (avoiding N+1 sequentially)
+        const results = await Promise.allSettled(
+          validUrls.map((url) =>
+            api.post(`/api/products/${editingProduct.id}/competitors`, url)
+          )
+        );
+        const failedCount = results.filter((r) => r.status === "rejected").length;
+        if (failedCount > 0) {
+          toast.warning("一部のURL追加に失敗", {
+            description: `${failedCount}件の競合URLが追加できませんでした（登録済み、または制限超過）。`
+          });
         }
       } else {
         const productData: ProductCreate = {
@@ -171,10 +175,15 @@ export default function ProductsPage() {
       setPlanLimitError(null);
       fetchProducts();
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number; data?: { detail?: string } } };
-      if (axiosErr.response?.status === 403) {
-        setPlanLimitError(axiosErr.response.data?.detail || "プラン制限に達しました");
-        setDialogOpen(false);
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status === 403) {
+          setPlanLimitError(err.response.data?.detail || "プラン制限に達しました");
+          setDialogOpen(false);
+        } else {
+          toast.error("処理エラー", {
+            description: err.response?.data?.detail || err.message
+          });
+        }
       } else {
         console.error("Failed to save product:", err);
       }

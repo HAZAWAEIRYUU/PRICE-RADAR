@@ -11,6 +11,9 @@ def get_current_user_dep(current_user: models.User = Depends(auth.get_current_us
 
 @router.get("/prices/alerts", response_model=List[schemas.PriceAlertItem])
 def get_price_alerts(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+    """
+    ログイン中のユーザーが登録している商品のうち、競合価格が自社価格より安いもの（アラート対象）のリストを取得するAPI
+    """
     # SaaS: only fetch products owned by the current user
     products = db.query(models.Product).filter(
         models.Product.is_active == True,
@@ -51,6 +54,10 @@ def get_price_alerts(db: Session = Depends(get_db), current_user: models.User = 
 
 @router.get("/prices/{product_id}/history", response_model=List[schemas.PriceHistoryRecord])
 def get_price_history(product_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+    """
+    特定の商品の競合価格推移（履歴）を取得するAPI
+    - **product_id**: 価格履歴を取得したい商品のID
+    """
     # SaaS: verify ownership before returning price history
     product = db.query(models.Product).filter(
         models.Product.id == product_id,
@@ -68,3 +75,26 @@ def get_price_history(product_id: int, db: Session = Depends(get_db), current_us
         .order_by(models.PriceHistory.scraped_at.asc()).all()
         
     return history
+
+from fastapi import HTTPException
+from scraper.tasks import scrape_competitor_url
+
+@router.post("/prices/scrape/{url_id}")
+async def force_scrape_url(url_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+    """
+    指定した競合URLの価格を即座にスクレイピングする手動トリガーAPI
+    - **url_id**: スクレイピングを実行したい競合URLのID
+    """
+    comp_url = db.query(models.CompetitorUrl).join(models.Product).filter(
+        models.CompetitorUrl.id == url_id,
+        models.Product.user_id == current_user.id
+    ).first()
+    
+    if not comp_url:
+        raise HTTPException(status_code=404, detail="Competitor URL not found or access denied")
+        
+    success = await scrape_competitor_url(db, comp_url)
+    if success:
+        return {"message": "Scraping successful"}
+    else:
+        raise HTTPException(status_code=400, detail="Failed to scrape price from URL")

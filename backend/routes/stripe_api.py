@@ -47,8 +47,10 @@ def create_checkout_session(current_user: models.User = Depends(auth.get_current
         checkout_session = stripe.checkout.Session.create(**session_params)
         return {"url": checkout_session.url}
     
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=400, detail="決済セッションの作成に失敗しました")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="内部エラーが発生しました")
 
 @router.post("/create-portal-session")
 def create_portal_session(current_user: models.User = Depends(auth.get_current_user)):
@@ -65,11 +67,13 @@ def create_portal_session(current_user: models.User = Depends(auth.get_current_u
             return_url=f"{frontend_url}/pricing",
         )
         return {"url": portalSession.url}
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=400, detail="カスタマーポータルの作成に失敗しました")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="内部エラーが発生しました")
 
 @router.post("/webhook")
-async def stripe_webhook(request: Request, stripe_signature: str = Header(None), db: Session = Depends(get_db)):
+async def stripe_webhook(request: Request, stripe_signature: str = Header(..., alias="stripe-signature"), db: Session = Depends(get_db)):
     _, _, webhook_secret, _ = get_stripe_config()
     if not webhook_secret:
         raise HTTPException(status_code=500, detail="Webhook secret not configured")

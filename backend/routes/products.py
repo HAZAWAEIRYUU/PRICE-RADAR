@@ -12,6 +12,9 @@ def get_current_user_dep(current_user: models.User = Depends(auth.get_current_us
 
 @router.get("/products", response_model=List[schemas.Product])
 def get_products(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+    """
+    ログイン中のユーザーが登録した商品一覧を取得するAPI
+    """
     # SaaS: only return products owned by the current user
     products = db.query(models.Product)\
         .filter(models.Product.user_id == current_user.id)\
@@ -20,12 +23,19 @@ def get_products(db: Session = Depends(get_db), current_user: models.User = Depe
 
 @router.get("/products/count", response_model=schemas.ProductCount)
 def get_products_count(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+    """
+    ログイン中のユーザーが登録している商品数を取得するAPI
+    """
     count = db.query(models.Product)\
         .filter(models.Product.user_id == current_user.id).count()
     return {"count": count}
 
 @router.get("/products/{product_id}", response_model=schemas.Product)
 def get_product(product_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+    """
+    特定の商品の詳細情報（競合URLを含む）を取得するAPI
+    - **product_id**: 取得したい商品のID
+    """
     product = db.query(models.Product).filter(
         models.Product.id == product_id,
         models.Product.user_id == current_user.id  # SaaS: ownership check
@@ -36,6 +46,14 @@ def get_product(product_id: int, db: Session = Depends(get_db), current_user: mo
 
 @router.post("/products", response_model=schemas.Product)
 def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+    """
+    新規商品を登録するAPI。現在のプランに基づく上限（商品数および商品あたりの競合URL数）チェックが行われます。
+    
+    - **product_name**: 商品名
+    - **own_price**: 自社価格
+    - **category**: (オプション) カテゴリ
+    - **competitor_urls**: (オプション) 競合URL情報のリスト (name, url)
+    """
     # SaaS: enforce plan limits
     plan_config = models.PLAN_LIMITS.get(current_user.plan, models.PLAN_LIMITS["free"])
     max_products = plan_config["max_products"]

@@ -11,7 +11,7 @@ export async function login(username: string, password: string) {
   });
 
   const { access_token } = response.data;
-  Cookies.set("access_token", access_token, { expires: 7, sameSite: "lax" });
+  Cookies.set("access_token", access_token, { expires: 7, sameSite: "lax", secure: process.env.NODE_ENV === "production" });
   return response.data;
 }
 
@@ -23,7 +23,7 @@ export async function register(username: string, password: string, email?: strin
   });
 
   const { access_token } = response.data;
-  Cookies.set("access_token", access_token, { expires: 7, sameSite: "lax" });
+  Cookies.set("access_token", access_token, { expires: 7, sameSite: "lax", secure: process.env.NODE_ENV === "production" });
   return response.data;
 }
 
@@ -34,12 +34,12 @@ export async function googleLogin(code: string, redirectUri: string) {
   });
 
   const { access_token } = response.data;
-  Cookies.set("access_token", access_token, { expires: 7, sameSite: "lax" });
+  Cookies.set("access_token", access_token, { expires: 7, sameSite: "lax", secure: process.env.NODE_ENV === "production" });
   return response.data;
 }
 
 export function getGoogleAuthUrl(redirectUri: string): string {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "495560668398-u5oaj3uajn9rrcmotvpo2k7057j5d1sm.apps.googleusercontent.com";
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
   if (!clientId) return "";
   const params = new URLSearchParams({
     client_id: clientId,

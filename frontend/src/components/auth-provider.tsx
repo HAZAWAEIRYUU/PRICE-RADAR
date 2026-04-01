@@ -31,9 +31,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const isPublicPath = pathname === "/login" || pathname === "/login/" || pathname === "/signup" || pathname === "/signup/";
-    if (!loading && !authenticated && !isPublicPath) {
-      window.location.href = "/login/";
+    // Exact or trailing slash matches for public pages
+    const publicPaths = ["/login", "/login/", "/signup", "/signup/", "/plans", "/plans/", "/privacy", "/privacy/", "/terms", "/terms/"];
+    const authPaths = ["/login", "/login/", "/signup", "/signup/"];
+    
+    const isPublicPath = publicPaths.includes(pathname);
+    const isAuthPath = authPaths.includes(pathname);
+
+    if (!loading) {
+      if (!authenticated && !isPublicPath) {
+        // Redirect unauthenticated users trying to access protected routes
+        window.location.href = "/login/";
+      } else if (authenticated && isAuthPath) {
+        // Redirect authenticated users away from auth pages
+        window.location.href = "/";
+      }
     }
   }, [authenticated, loading, pathname]);
 

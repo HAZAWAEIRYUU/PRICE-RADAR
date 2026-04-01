@@ -222,12 +222,12 @@ export default function DashboardPage() {
                           <Badge
                             variant="secondary"
                             className={
-                              item.stock_status === "in_stock"
+                              item.stock_status === "在庫あり"
                                 ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/20"
                                 : "bg-red-500/15 text-red-400 border-red-500/20"
                             }
                           >
-                            {item.stock_status === "in_stock"
+                            {item.stock_status === "在庫あり"
                               ? "在庫あり"
                               : "品切れ"}
                           </Badge>

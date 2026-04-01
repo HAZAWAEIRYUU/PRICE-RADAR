@@ -65,7 +65,7 @@ export interface PriceComparisonItem {
   product_name: string;
   own_price: string;
   category: string | null;
-  competitors: Record<string, unknown>[];
+  competitors: Record<string, string | number>[];
 }
 
 export interface ProductCount {

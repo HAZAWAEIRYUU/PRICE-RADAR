@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import api from "@/lib/api";
+import { toast } from "sonner";
 import { Product, PriceHistoryRecord } from "@/lib/types";
 import {
   Card,
@@ -18,6 +19,7 @@ import {
   TrendingUp,
   TrendingDown,
   Calendar,
+  RefreshCw,
 } from "lucide-react";
 import {
   LineChart,
@@ -55,61 +57,79 @@ export default function PricesPage() {
   const [chartData, setChartData] = useState<CombinedChartData[]>([]);
   const [loading, setLoading] = useState(true);
   const [competitors, setCompetitors] = useState<string[]>([]);
+  const [scrapingId, setScrapingId] = useState<number | null>(null);
+
+  const fetchData = async () => {
+    try {
+      const [productRes, historyRes] = await Promise.all([
+        api.get(`/api/products/${productId}`),
+        api.get(`/api/prices/${productId}/history`),
+      ]);
+      const p: Product = productRes.data;
+      setProduct(p);
+
+      const rawHistory: PriceHistoryRecord[] = historyRes.data;
+      
+      const urlIdToName: Record<number, string> = {};
+      if (p.competitor_urls) {
+        p.competitor_urls.forEach((url) => {
+          urlIdToName[url.id] = url.competitor_name;
+        });
+      }
+      
+      const compNames = new Set(Object.values(urlIdToName));
+      setCompetitors(Array.from(compNames));
+
+      const grouped: Record<string, CombinedChartData> = {};
+      
+      rawHistory.forEach((record) => {
+        const date = new Date(record.scraped_at).toLocaleDateString();
+        if (!grouped[date]) {
+          grouped[date] = {
+            date,
+            our_price: parseFloat(p.own_price),
+          };
+        }
+        const compName = urlIdToName[record.competitor_url_id] || `Unknown (${record.competitor_url_id})`;
+        grouped[date][compName] = parseFloat(record.price);
+      });
+
+      const sortedData = Object.values(grouped).sort((a, b) => 
+        new Date(a.date).getTime() - new Date(b.date).getTime()
+      );
+      
+      setChartData(sortedData);
+
+    } catch (err) {
+      console.error("Failed to fetch price history:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!productId) {
       setLoading(false);
       return;
     }
-    const fetchData = async () => {
-      try {
-        const [productRes, historyRes] = await Promise.all([
-          api.get(`/api/products/${productId}`),
-          api.get(`/api/prices/${productId}/history`),
-        ]);
-        const p: Product = productRes.data;
-        setProduct(p);
-
-        const rawHistory: PriceHistoryRecord[] = historyRes.data;
-        
-        const urlIdToName: Record<number, string> = {};
-        if (p.competitor_urls) {
-          p.competitor_urls.forEach((url) => {
-            urlIdToName[url.id] = url.competitor_name;
-          });
-        }
-        
-        const compNames = new Set(Object.values(urlIdToName));
-        setCompetitors(Array.from(compNames));
-
-        const grouped: Record<string, CombinedChartData> = {};
-        
-        rawHistory.forEach((record) => {
-          const date = new Date(record.scraped_at).toLocaleDateString();
-          if (!grouped[date]) {
-            grouped[date] = {
-              date,
-              our_price: parseFloat(p.own_price),
-            };
-          }
-          const compName = urlIdToName[record.competitor_url_id] || `Unknown (${record.competitor_url_id})`;
-          grouped[date][compName] = parseFloat(record.price);
-        });
-
-        const sortedData = Object.values(grouped).sort((a, b) => 
-          new Date(a.date).getTime() - new Date(b.date).getTime()
-        );
-        
-        setChartData(sortedData);
-
-      } catch (err) {
-        console.error("Failed to fetch price history:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchData();
   }, [productId]);
+
+  const handleScrape = async (urlId: number) => {
+    setScrapingId(urlId);
+    try {
+      await api.post(`/api/prices/scrape/${urlId}`);
+      await fetchData(); // Refresh data after scrape
+    } catch (err) {
+      // エラーログ出力は最小限に留める（Next.jsの開発環境オーバーレイ表示を防ぐため）
+      console.log("Scraping API responded with an error.");
+      toast.error("スクレイピング失敗", {
+        description: "サイトの構造変更やブロックの可能性があります。"
+      });
+    } finally {
+      setScrapingId(null);
+    }
+  };
 
   const latestData = chartData[chartData.length - 1];
   const lowestCompetitor =
@@ -256,20 +276,30 @@ export default function PricesPage() {
               <p className="text-xs text-muted-foreground uppercase tracking-wider">
                 監視中の競合
               </p>
-              <div className="flex flex-wrap gap-1 mt-1.5">
+              <div className="flex flex-wrap gap-2 mt-1.5">
                 {product.competitor_urls?.map((c, i) => (
-                  <Badge
-                    key={c.id}
-                    variant="secondary"
-                    className="text-xs"
-                    style={{
-                      borderColor: CHART_COLORS[i + 1] + "33",
-                      color: CHART_COLORS[i + 1],
-                      backgroundColor: CHART_COLORS[i + 1] + "15",
-                    }}
-                  >
-                    {c.competitor_name}
-                  </Badge>
+                  <div key={c.id} className="flex items-center bg-secondary/20 rounded-full pr-1 overflow-hidden border border-border/50">
+                    <Badge
+                      variant="secondary"
+                      className="text-xs rounded-none border-0"
+                      style={{
+                        color: CHART_COLORS[(i % CHART_COLORS.length) + 1],
+                        backgroundColor: CHART_COLORS[(i % CHART_COLORS.length) + 1] + "15",
+                      }}
+                    >
+                      {c.competitor_name}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 ml-1 rounded-full hover:bg-secondary/50"
+                      onClick={() => handleScrape(c.id)}
+                      disabled={scrapingId === c.id}
+                      title="価格を今すぐ取得"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${scrapingId === c.id ? 'animate-spin' : ''}`} />
+                    </Button>
+                  </div>
                 ))}
                 {(!product.competitor_urls || product.competitor_urls.length === 0) && (
                   <span className="text-sm text-muted-foreground">
