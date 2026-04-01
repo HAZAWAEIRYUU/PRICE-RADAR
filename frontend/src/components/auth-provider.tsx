@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { isAuthenticated as checkAuth, logout as doLogout } from "@/lib/auth";
+import { isAuthenticated as checkAuth, logout as doLogout, prewarmBackend } from "@/lib/auth";
 import { usePathname } from "next/navigation";
 
 interface AuthContextType {
@@ -26,7 +26,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    setAuthenticated(checkAuth());
+    const isAuth = checkAuth();
+    setAuthenticated(isAuth);
+    if (isAuth) prewarmBackend();
     setLoading(false);
   }, []);
 

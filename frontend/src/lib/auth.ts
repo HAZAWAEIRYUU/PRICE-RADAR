@@ -12,6 +12,7 @@ export async function login(username: string, password: string) {
 
   const { access_token } = response.data;
   Cookies.set("access_token", access_token, { expires: 7, sameSite: "lax", secure: process.env.NODE_ENV === "production" });
+  prewarmBackend();
   return response.data;
 }
 
@@ -24,6 +25,7 @@ export async function register(username: string, password: string, email?: strin
 
   const { access_token } = response.data;
   Cookies.set("access_token", access_token, { expires: 7, sameSite: "lax", secure: process.env.NODE_ENV === "production" });
+  prewarmBackend();
   return response.data;
 }
 
@@ -35,6 +37,7 @@ export async function googleLogin(code: string, redirectUri: string) {
 
   const { access_token } = response.data;
   Cookies.set("access_token", access_token, { expires: 7, sameSite: "lax", secure: process.env.NODE_ENV === "production" });
+  prewarmBackend();
   return response.data;
 }
 
@@ -55,6 +58,11 @@ export function getGoogleAuthUrl(redirectUri: string): string {
 export function logout() {
   Cookies.remove("access_token");
   window.location.href = "/login/";
+}
+
+// Pre-warm the backend after login to reduce cold-start delay on dashboard
+export function prewarmBackend() {
+  api.get("/api/products/count").catch(() => {});
 }
 
 export function getToken(): string | undefined {
