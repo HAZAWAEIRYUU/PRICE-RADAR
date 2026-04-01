@@ -34,7 +34,7 @@ function LoginContent() {
       const redirectUri = `${window.location.origin}/login/`;
       googleLogin(code, redirectUri)
         .then(() => {
-          window.location.href = "/";
+          window.location.href = "/dashboard/";
         })
         .catch(() => {
           setError("Googleアカウントでのログインに失敗しました。");
@@ -52,7 +52,7 @@ function LoginContent() {
 
     try {
       await login(username, password);
-      window.location.href = "/";
+      window.location.href = "/dashboard/";
     } catch {
       setError("ユーザー名またはパスワードが正しくありません。");
     } finally {

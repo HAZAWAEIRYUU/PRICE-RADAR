@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Exact or trailing slash matches for public pages
-    const publicPaths = ["/login", "/login/", "/signup", "/signup/", "/plans", "/plans/", "/privacy", "/privacy/", "/terms", "/terms/"];
+    const publicPaths = ["/", "/login", "/login/", "/signup", "/signup/", "/plans", "/plans/", "/privacy", "/privacy/", "/terms", "/terms/"];
     const authPaths = ["/login", "/login/", "/signup", "/signup/"];
     
     const isPublicPath = publicPaths.includes(pathname);
@@ -46,7 +46,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         window.location.href = "/login/";
       } else if (authenticated && isAuthPath) {
         // Redirect authenticated users away from auth pages
-        window.location.href = "/";
+        window.location.href = "/dashboard/";
+      } else if (authenticated && (pathname === "/" || pathname === "")) {
+        // Redirect authenticated users from landing page to dashboard
+        window.location.href = "/dashboard/";
       }
     }
   }, [authenticated, loading, pathname]);

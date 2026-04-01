@@ -36,7 +36,7 @@ function SignupContent() {
       const redirectUri = `${window.location.origin}/signup/`;
       googleLogin(code, redirectUri)
         .then(() => {
-          window.location.href = "/";
+          window.location.href = "/dashboard/";
         })
         .catch(() => {
           setError("Googleアカウントでの登録に失敗しました。");
@@ -59,7 +59,7 @@ function SignupContent() {
 
     try {
       await register(username, password, email || undefined);
-      window.location.href = "/";
+      window.location.href = "/dashboard/";
     } catch {
       setError("登録に失敗しました。（ユーザー名が既に存在する可能性があります）");
     } finally {
