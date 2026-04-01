@@ -145,7 +145,7 @@ export default function LandingPage() {
           <div className="mt-16 relative">
             <div className="absolute -inset-4 bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 rounded-2xl blur-xl" />
             <div className="relative rounded-xl border border-border/30 bg-card/90 backdrop-blur-xl shadow-2xl overflow-hidden p-6 sm:p-8">
-              <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                 {[
                   { label: "監視中商品数", value: "12", color: "from-emerald-500 to-cyan-500" },
                   { label: "価格負け商品", value: "3", color: "from-red-500 to-orange-500" },
