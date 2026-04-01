@@ -29,7 +29,7 @@ def upgrade() -> None:
         sa.Column('plan', sa.String(), server_default='free', nullable=False),
         sa.Column('stripe_customer_id', sa.String(), nullable=True),
         sa.Column('stripe_subscription_id', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.func.now(), nullable=True),
     )
     op.create_index('ix_users_id', 'users', ['id'])
     op.create_index('ix_users_username', 'users', ['username'], unique=True)
@@ -45,8 +45,8 @@ def upgrade() -> None:
         sa.Column('own_price', sa.Numeric(10, 2), nullable=True),
         sa.Column('category', sa.String(), nullable=True),
         sa.Column('is_active', sa.Boolean(), server_default=sa.text('true'), nullable=False),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.func.now(), nullable=True),
+        sa.Column('updated_at', sa.DateTime(), server_default=sa.func.now(), nullable=True),
     )
     op.create_index('ix_products_id', 'products', ['id'])
     op.create_index('ix_products_user_id', 'products', ['user_id'])
@@ -58,7 +58,7 @@ def upgrade() -> None:
         sa.Column('product_id', sa.Integer(), sa.ForeignKey('products.id'), nullable=True),
         sa.Column('competitor_name', sa.String(), nullable=True),
         sa.Column('url', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.func.now(), nullable=True),
     )
     op.create_index('ix_competitor_urls_id', 'competitor_urls', ['id'])
 
@@ -68,8 +68,8 @@ def upgrade() -> None:
         sa.Column('competitor_url_id', sa.Integer(), sa.ForeignKey('competitor_urls.id'), nullable=True),
         sa.Column('price', sa.Numeric(10, 2), nullable=True),
         sa.Column('stock_status', sa.String(), server_default='在庫あり', nullable=True),
-        sa.Column('scraped_at', sa.DateTime(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.Column('scraped_at', sa.DateTime(), server_default=sa.func.now(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.func.now(), nullable=True),
     )
     op.create_index('ix_price_histories_id', 'price_histories', ['id'])
 

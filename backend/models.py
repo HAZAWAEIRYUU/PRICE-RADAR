@@ -1,3 +1,4 @@
+import sqlalchemy as sa
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, DateTime, Numeric
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -14,7 +15,7 @@ class User(Base):
     plan = Column(String, default="free")  # free / pro / enterprise
     stripe_customer_id = Column(String, nullable=True, index=True)
     stripe_subscription_id = Column(String, nullable=True, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=sa.func.now())
 
     products = relationship("Product", back_populates="owner", cascade="all, delete-orphan")
 
@@ -27,8 +28,8 @@ class Product(Base):
     own_price = Column(Numeric(10, 2))
     category = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=sa.func.now())
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=sa.func.now(), onupdate=lambda: datetime.now(timezone.utc))
 
     owner = relationship("User", back_populates="products")
     competitor_urls = relationship("CompetitorUrl", back_populates="product", cascade="all, delete-orphan")
@@ -40,7 +41,7 @@ class CompetitorUrl(Base):
     product_id = Column(Integer, ForeignKey("products.id"))
     competitor_name = Column(String)
     url = Column(String)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=sa.func.now())
 
     product = relationship("Product", back_populates="competitor_urls")
     price_histories = relationship("PriceHistory", back_populates="competitor_url", cascade="all, delete-orphan")
@@ -52,8 +53,8 @@ class PriceHistory(Base):
     competitor_url_id = Column(Integer, ForeignKey("competitor_urls.id"))
     price = Column(Numeric(10, 2))
     stock_status = Column(String, default="在庫あり")
-    scraped_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    scraped_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=sa.func.now())
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=sa.func.now())
 
     competitor_url = relationship("CompetitorUrl", back_populates="price_histories")
 
