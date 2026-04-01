@@ -28,7 +28,4 @@ def get_plan_info(db: Session = Depends(get_db), current_user: models.User = Dep
         }
     }
 
-@router.post("/plan/upgrade")
-def upgrade_plan(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
-    raise HTTPException(status_code=400, detail="This endpoint is deprecated. Please use /api/stripe/create-checkout-session for updates.")
 

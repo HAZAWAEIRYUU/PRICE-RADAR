@@ -1,5 +1,5 @@
 import os
-from fastapi import APIRouter, Depends, HTTPException, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Header
 from sqlalchemy.orm import Session
 import stripe
 from database import get_db
@@ -9,10 +9,10 @@ import auth
 router = APIRouter()
 
 def get_stripe_config():
-    api_key = os.environ.get("STRIPE_API_KEY", "")
-    price_id = os.environ.get("STRIPE_PRICE_ID_PRO", "")
+    api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+    price_id = os.environ.get("STRIPE_PRICE_ID", "")
     webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-    frontend_url = os.environ.get("FRONTEND_URL", "https://price-radar.pages.dev")
+    frontend_url = os.environ.get("FRONTEND_URL", "https://priceradar.space")
     stripe.api_key = api_key
     return api_key, price_id, webhook_secret, frontend_url
 
@@ -71,6 +71,31 @@ def create_portal_session(current_user: models.User = Depends(auth.get_current_u
         raise HTTPException(status_code=400, detail="カスタマーポータルの作成に失敗しました")
     except Exception as e:
         raise HTTPException(status_code=500, detail="内部エラーが発生しました")
+
+@router.get("/verify-session")
+def verify_session(
+    session_id: str = Query(...),
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    api_key, _, _, _ = get_stripe_config()
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Stripe configuration is missing")
+
+    try:
+        checkout_session = stripe.checkout.Session.retrieve(session_id)
+    except stripe.error.StripeError:
+        raise HTTPException(status_code=400, detail="Invalid session")
+
+    if checkout_session.client_reference_id != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Session does not belong to this user")
+
+    if checkout_session.payment_status != "paid":
+        raise HTTPException(status_code=400, detail="Payment not completed")
+
+    # Refresh user from DB to get latest plan
+    db.refresh(current_user)
+    return {"status": "verified", "plan": current_user.plan}
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request, stripe_signature: str = Header(..., alias="stripe-signature"), db: Session = Depends(get_db)):

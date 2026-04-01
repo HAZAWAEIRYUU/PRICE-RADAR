@@ -20,7 +20,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Check,
   X,
   Zap,
   Shield,
@@ -53,7 +52,6 @@ export default function DashboardPricingPage() {
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [successOpen, setSuccessOpen] = useState(false);
 
   useEffect(() => {
     const fetchPlan = async () => {
@@ -358,33 +356,6 @@ export default function DashboardPricingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Success Dialog */}
-      <Dialog open={successOpen} onOpenChange={setSuccessOpen}>
-        <DialogContent className="sm:max-w-md bg-card border-border/50 text-center">
-          <div className="py-4">
-            <div className="flex justify-center mb-4">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center">
-                <Check className="w-8 h-8 text-emerald-400" />
-              </div>
-            </div>
-            <h3 className="text-xl font-bold mb-2">
-              アップグレード完了 🎉
-            </h3>
-            <p className="text-muted-foreground text-sm">
-              Pro プランが有効になりました。
-              すべての機能をお楽しみください！
-            </p>
-          </div>
-          <DialogFooter className="justify-center">
-            <Button
-              onClick={() => setSuccessOpen(false)}
-              className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white"
-            >
-              OK
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
