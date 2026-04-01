@@ -4,7 +4,6 @@ Amazon / 楽天 / Yahoo Shopping / 汎用サイト対応
 
 curl_cffi を使用してブラウザのTLSフィンガープリントを模倣し、
 Amazon等のボット検出を回避する。
-Playwright をフォールバックとして使用（Yahoo Shopping等のJS依存サイト向け）。
 """
 
 import re
@@ -143,39 +142,6 @@ async def fetch_with_curl_cffi(url: str, warmup_url: str = None, max_retries: in
 
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _fetch)
-
-
-async def fetch_with_playwright(url: str) -> Optional[str]:
-    """Playwright でヘッドレスブラウザによりJS描画後のHTMLを取得"""
-    try:
-        from playwright.async_api import async_playwright
-    except ImportError:
-        logger.warning("Playwright not installed, skipping browser fallback")
-        return None
-
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=['--disable-blink-features=AutomationControlled', '--no-sandbox']
-            )
-            ctx = await browser.new_context(
-                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                locale='ja-JP',
-                viewport={'width': 1920, 'height': 1080},
-            )
-            await ctx.add_init_script(
-                'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'
-            )
-            page = await ctx.new_page()
-            await page.goto(url, wait_until='domcontentloaded', timeout=20000)
-            await page.wait_for_timeout(3000)
-            html = await page.content()
-            await browser.close()
-            return html if len(html) > 2000 else None
-    except Exception as e:
-        logger.error(f"Playwright fallback failed for {url}: {e}")
-        return None
 
 
 # ============================================================
@@ -395,11 +361,7 @@ class YahooShoppingScraper(BaseScraper):
     """Yahoo!ショッピング (store.shopping.yahoo.co.jp) スクレイパー"""
 
     async def fetch_html(self, url: str) -> Optional[str]:
-        """Yahoo Shopping はJSレンダリング依存のためPlaywrightをまず試す"""
-        html = await fetch_with_playwright(url)
-        if html and len(html) > 5000:
-            return html
-        # PlaywrightがNGならcurl_cffiにフォールバック
+        """Yahoo Shopping を curl_cffi で取得（LD+JSON/メタタグで価格取得可能）"""
         return await fetch_with_curl_cffi(url)
 
     async def extract_price(self, soup) -> Optional[float]:
