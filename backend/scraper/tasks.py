@@ -36,7 +36,7 @@ async def run_scheduled_scraping():
         
         # In a real SaaS, we'd distribute these or batch them
         # For this PoC, we run concurrently but with a limit
-        concurrency = 5
+        concurrency = 2
         semaphore = asyncio.Semaphore(concurrency)
         
         async def scrape_with_sema(url_obj):
