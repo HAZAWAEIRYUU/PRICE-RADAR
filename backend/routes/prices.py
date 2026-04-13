@@ -1,24 +1,22 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 from database import get_db
 import models, schemas, auth
 
 router = APIRouter()
 
-def get_current_user_dep(current_user: models.User = Depends(auth.get_current_user)):
-    return current_user
-
 @router.get("/prices/alerts", response_model=List[schemas.PriceAlertItem])
-def get_price_alerts(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+def get_price_alerts(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     """
     ログイン中のユーザーが登録している商品のうち、競合価格が自社価格より安いもの（アラート対象）のリストを取得するAPI
     """
-    # SaaS: only fetch products owned by the current user
-    products = db.query(models.Product).filter(
-        models.Product.is_active == True,
-        models.Product.user_id == current_user.id
-    ).all()
+    products = db.query(models.Product)\
+        .options(joinedload(models.Product.competitor_urls))\
+        .filter(
+            models.Product.is_active == True,
+            models.Product.user_id == current_user.id
+        ).all()
     alerts = []
     
     for product in products:
@@ -53,7 +51,7 @@ def get_price_alerts(db: Session = Depends(get_db), current_user: models.User = 
     return alerts
 
 @router.get("/prices/{product_id}/history", response_model=List[schemas.PriceHistoryRecord])
-def get_price_history(product_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+def get_price_history(product_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     """
     特定の商品の競合価格推移（履歴）を取得するAPI
     - **product_id**: 価格履歴を取得したい商品のID
@@ -76,11 +74,16 @@ def get_price_history(product_id: int, db: Session = Depends(get_db), current_us
         
     return history
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from scraper.tasks import scrape_competitor_url
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 @router.post("/prices/scrape/{url_id}")
-async def force_scrape_url(url_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+@limiter.limit("10/minute")
+async def force_scrape_url(request: Request, url_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     """
     指定した競合URLの価格を即座にスクレイピングする手動トリガーAPI
     - **url_id**: スクレイピングを実行したい競合URLのID

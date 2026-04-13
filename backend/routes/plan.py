@@ -1,15 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 import models, schemas, auth
 
 router = APIRouter()
 
-def get_current_user_dep(current_user: models.User = Depends(auth.get_current_user)):
-    return current_user
-
 @router.get("/plan", response_model=schemas.PlanInfo)
-def get_plan_info(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+def get_plan_info(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     plan_key = current_user.plan or "free"
     plan_config = models.PLAN_LIMITS.get(plan_key, models.PLAN_LIMITS["free"])
     

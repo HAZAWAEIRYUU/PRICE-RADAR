@@ -1,28 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 from database import get_db
 import models, schemas, auth
+from urllib.parse import urlparse
 
 router = APIRouter()
 
-# Dependency for auth
-def get_current_user_dep(current_user: models.User = Depends(auth.get_current_user)):
-    return current_user
-
 @router.get("/products", response_model=List[schemas.Product])
-def get_products(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+def get_products(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     """
     ログイン中のユーザーが登録した商品一覧を取得するAPI
     """
-    # SaaS: only return products owned by the current user
     products = db.query(models.Product)\
+        .options(joinedload(models.Product.competitor_urls))\
         .filter(models.Product.user_id == current_user.id)\
         .order_by(models.Product.created_at.desc()).all()
     return products
 
 @router.get("/products/count", response_model=schemas.ProductCount)
-def get_products_count(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+def get_products_count(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     """
     ログイン中のユーザーが登録している商品数を取得するAPI
     """
@@ -31,7 +28,7 @@ def get_products_count(db: Session = Depends(get_db), current_user: models.User 
     return {"count": count}
 
 @router.get("/products/{product_id}", response_model=schemas.Product)
-def get_product(product_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+def get_product(product_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     """
     特定の商品の詳細情報（競合URLを含む）を取得するAPI
     - **product_id**: 取得したい商品のID
@@ -45,7 +42,7 @@ def get_product(product_id: int, db: Session = Depends(get_db), current_user: mo
     return product
 
 @router.post("/products", response_model=schemas.Product)
-def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     """
     新規商品を登録するAPI。現在のプランに基づく上限（商品数および商品あたりの競合URL数）チェックが行われます。
     
@@ -84,6 +81,9 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
     db.flush()  # To get db_product.id
     
     for comp in product.competitor_urls:
+        parsed = urlparse(comp.url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise HTTPException(status_code=400, detail=f"無効なURL: {comp.url}")
         db_comp = models.CompetitorUrl(
             product_id=db_product.id,
             competitor_name=comp.competitor_name,
@@ -96,7 +96,7 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
     return db_product
 
 @router.put("/products/{product_id}", response_model=schemas.Product)
-def update_product(product_id: int, product_update: schemas.ProductUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+def update_product(product_id: int, product_update: schemas.ProductUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     db_product = db.query(models.Product).filter(
         models.Product.id == product_id,
         models.Product.user_id == current_user.id  # SaaS: ownership check
@@ -113,7 +113,7 @@ def update_product(product_id: int, product_update: schemas.ProductUpdate, db: S
     return db_product
 
 @router.delete("/products/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+def delete_product(product_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     db_product = db.query(models.Product).filter(
         models.Product.id == product_id,
         models.Product.user_id == current_user.id  # SaaS: ownership check
@@ -126,7 +126,7 @@ def delete_product(product_id: int, db: Session = Depends(get_db), current_user:
     return {"detail": "Product deleted"}
 
 @router.post("/products/{product_id}/competitors", response_model=schemas.CompetitorUrl)
-def add_competitor(product_id: int, comp: schemas.CompetitorUrlCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user_dep)):
+def add_competitor(product_id: int, comp: schemas.CompetitorUrlCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     db_product = db.query(models.Product).filter(
         models.Product.id == product_id,
         models.Product.user_id == current_user.id  # SaaS: ownership check
@@ -144,6 +144,10 @@ def add_competitor(product_id: int, comp: schemas.CompetitorUrlCreate, db: Sessi
             detail=f"競合URL数の上限に達しました（{current_user.plan}プラン: 1商品あたり{max_comps}件）。プランをアップグレードしてください。"
         )
         
+    parsed = urlparse(comp.url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="有効なURLを入力してください（http:// または https:// で始まる必要があります）")
+
     db_comp = models.CompetitorUrl(
         product_id=product_id,
         competitor_name=comp.competitor_name,

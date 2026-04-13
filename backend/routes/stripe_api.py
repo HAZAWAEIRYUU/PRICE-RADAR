@@ -1,10 +1,13 @@
 import os
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Header
 from sqlalchemy.orm import Session
 import stripe
 from database import get_db
 import models
 import auth
+
+logger = logging.getLogger("priceradar.stripe")
 
 router = APIRouter()
 
@@ -20,7 +23,7 @@ def get_stripe_config():
 def create_checkout_session(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(get_db)):
     api_key, price_id, _, frontend_url = get_stripe_config()
     if not api_key or not price_id:
-        raise HTTPException(status_code=500, detail=f"Stripe configuration is missing. api_key={'set' if api_key else 'empty'}, price_id={'set' if price_id else 'empty'}")
+        raise HTTPException(status_code=500, detail="Stripe configuration is missing")
         
     try:
         customer_id = current_user.stripe_customer_id
@@ -114,9 +117,11 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(..., a
         raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
     # Handle the event
+    logger.info(f"Stripe webhook received: {event['type']}")
+
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
-        
+
         # Save customer ID and subscription ID
         user_id = session.get("client_reference_id")
         if user_id:
@@ -126,6 +131,9 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(..., a
                 user.stripe_subscription_id = session.get("subscription")
                 user.plan = "pro"
                 db.commit()
+                logger.info(f"User {user.id} upgraded to pro via checkout")
+            else:
+                logger.warning(f"Webhook: user_id={user_id} not found in DB")
 
     elif event['type'] == 'customer.subscription.deleted':
         subscription = event['data']['object']
