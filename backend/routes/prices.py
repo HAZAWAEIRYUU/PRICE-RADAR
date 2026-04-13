@@ -51,27 +51,45 @@ def get_price_alerts(db: Session = Depends(get_db), current_user: models.User = 
     return alerts
 
 @router.get("/prices/{product_id}/history", response_model=List[schemas.PriceHistoryRecord])
-def get_price_history(product_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def get_price_history(
+    product_id: int,
+    limit: int = 500,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
     """
     特定の商品の競合価格推移（履歴）を取得するAPI
     - **product_id**: 価格履歴を取得したい商品のID
+    - **limit**: 最大取得件数（デフォルト500）
+    - **offset**: オフセット（デフォルト0）
     """
-    # SaaS: verify ownership before returning price history
     product = db.query(models.Product).filter(
         models.Product.id == product_id,
         models.Product.user_id == current_user.id
     ).first()
     if not product:
         return []
-        
+
     url_ids = [url.id for url in product.competitor_urls]
     if not url_ids:
         return []
-        
-    history = db.query(models.PriceHistory)\
-        .filter(models.PriceHistory.competitor_url_id.in_(url_ids))\
-        .order_by(models.PriceHistory.scraped_at.asc()).all()
-        
+
+    # Enforce plan history retention
+    plan_config = models.PLAN_LIMITS.get(current_user.plan, models.PLAN_LIMITS["free"])
+    retention_days = plan_config.get("history_retention_days")
+
+    query = db.query(models.PriceHistory)\
+        .filter(models.PriceHistory.competitor_url_id.in_(url_ids))
+
+    if retention_days is not None:
+        from datetime import datetime, timezone, timedelta
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        query = query.filter(models.PriceHistory.scraped_at >= cutoff)
+
+    history = query.order_by(models.PriceHistory.scraped_at.asc())\
+        .offset(offset).limit(min(limit, 1000)).all()
+
     return history
 
 from fastapi import HTTPException, Request

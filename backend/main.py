@@ -21,7 +21,7 @@ logger = logging.getLogger("priceradar")
 import asyncio
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from scraper.tasks import run_scheduled_scraping
+from scraper.tasks import run_scheduled_scraping, cleanup_old_history
 
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
@@ -33,6 +33,7 @@ logger.info("Database tables initialized")
 # Scheduler setup
 scheduler = AsyncIOScheduler()
 scheduler.add_job(run_scheduled_scraping, "interval", hours=1)
+scheduler.add_job(cleanup_old_history, "interval", hours=24)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from database import SessionLocal
 import models
@@ -48,5 +48,40 @@ async def run_scheduled_scraping():
             await asyncio.gather(*tasks)
             
         logger.info("Scheduled scraping job completed")
+    finally:
+        db.close()
+
+
+async def cleanup_old_history():
+    """Free プランユーザーの古い価格履歴を削除する"""
+    db = SessionLocal()
+    try:
+        free_users = db.query(models.User).filter(models.User.plan == "free").all()
+        if not free_users:
+            return
+
+        retention = models.PLAN_LIMITS["free"]["history_retention_days"]
+        if retention is None:
+            return
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention)
+        free_user_ids = [u.id for u in free_users]
+
+        deleted = db.query(models.PriceHistory)\
+            .filter(
+                models.PriceHistory.scraped_at < cutoff,
+                models.PriceHistory.competitor_url_id.in_(
+                    db.query(models.CompetitorUrl.id).join(models.Product).filter(
+                        models.Product.user_id.in_(free_user_ids)
+                    )
+                )
+            ).delete(synchronize_session=False)
+
+        db.commit()
+        if deleted:
+            logger.info(f"Cleaned up {deleted} old price history records for Free plan users")
+    except Exception as e:
+        logger.error(f"History cleanup failed: {e}")
+        db.rollback()
     finally:
         db.close()
