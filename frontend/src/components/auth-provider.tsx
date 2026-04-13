@@ -40,7 +40,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isPublicPath = publicPaths.includes(pathname);
     const isAuthPath = authPaths.includes(pathname);
 
-    if (!loading) {
+    // Skip redirects while Google OAuth callback is being processed
+    const hasOAuthCode = typeof window !== "undefined" && window.location.search.includes("code=");
+
+    if (!loading && !hasOAuthCode) {
       if (!authenticated && !isPublicPath) {
         // Redirect unauthenticated users trying to access protected routes
         window.location.href = "/login/";

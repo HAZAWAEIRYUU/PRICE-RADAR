@@ -38,7 +38,8 @@ function SignupContent() {
         .then(() => {
           window.location.href = "/dashboard/";
         })
-        .catch(() => {
+        .catch((err) => {
+          console.error("Google auth failed:", err?.response?.data || err);
           setError("Googleアカウントでの登録に失敗しました。");
           setGoogleLoading(false);
           window.history.replaceState({}, "", "/signup/");

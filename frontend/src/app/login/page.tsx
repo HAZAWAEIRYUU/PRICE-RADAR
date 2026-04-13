@@ -36,10 +36,10 @@ function LoginContent() {
         .then(() => {
           window.location.href = "/dashboard/";
         })
-        .catch(() => {
+        .catch((err) => {
+          console.error("Google auth failed:", err?.response?.data || err);
           setError("Googleアカウントでのログインに失敗しました。");
           setGoogleLoading(false);
-          // Clean URL
           window.history.replaceState({}, "", "/login/");
         });
     }
