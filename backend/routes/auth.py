@@ -104,22 +104,7 @@ async def google_auth(request: Request, body: schemas.GoogleAuthRequest, db: Ses
         )
 
     if token_response.status_code != 200:
-        # Diagnostic: surface Google's actual error response so we can debug
-        # invalid_grant / redirect_uri_mismatch / invalid_client etc. via Render logs and frontend toast.
-        google_error_body = token_response.text[:500]
-        import logging
-        code_preview = (body.code[:8] + "...") if body.code else "<empty>"
-        cid_preview = (client_id[:20] + "...") if client_id else "<empty>"
-        csec_len = len(client_secret) if client_secret else 0
-        logging.getLogger("priceradar.auth").warning(
-            "Google token exchange failed: status=%s body=%s redirect_uri=%s code_len=%s code_prefix=%s client_id_prefix=%s secret_len=%s",
-            token_response.status_code, google_error_body, body.redirect_uri,
-            len(body.code) if body.code else 0, code_preview, cid_preview, csec_len,
-        )
-        raise HTTPException(
-            status_code=400,
-            detail=f"Failed to exchange Google authorization code: {google_error_body}",
-        )
+        raise HTTPException(status_code=400, detail="Failed to exchange Google authorization code")
 
     token_data = token_response.json()
     access_token = token_data.get("access_token")
