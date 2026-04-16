@@ -111,3 +111,31 @@ class GoogleAuthRequest(BaseModel):
     code: str
     redirect_uri: str
 
+class LineAuthRequest(BaseModel):
+    code: str
+    redirect_uri: str
+    link_to_user_id: Optional[int] = None  # 既存ユーザーへのLINE連携時に使用
+
+class NotificationSettings(BaseModel):
+    notification_enabled: bool
+    notify_price_loss: bool
+    notify_price_recovery: bool
+    notify_stock_change: bool
+    notify_subscription: bool
+
+    class Config:
+        from_attributes = True
+
+class NotificationSettingsUpdate(BaseModel):
+    notification_enabled: Optional[bool] = None
+    notify_price_loss: Optional[bool] = None
+    notify_price_recovery: Optional[bool] = None
+    notify_stock_change: Optional[bool] = None
+    notify_subscription: Optional[bool] = None
+
+class LineLinkStatus(BaseModel):
+    linked: bool
+    line_user_id: Optional[str] = None
+    line_display_name: Optional[str] = None
+    bot_basic_id: Optional[str] = None  # 友達追加用
+

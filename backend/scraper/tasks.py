@@ -11,7 +11,7 @@ logger = logging.getLogger("priceradar.scraper")
 async def scrape_competitor_url(db: Session, comp_url: models.CompetitorUrl):
     scraper = get_scraper(comp_url.url)
     price, stock = await scraper.scrape(comp_url.url)
-    
+
     if price is not None:
         new_history = models.PriceHistory(
             competitor_url_id=comp_url.id,
@@ -22,6 +22,14 @@ async def scrape_competitor_url(db: Session, comp_url: models.CompetitorUrl):
         db.add(new_history)
         db.commit()
         logger.info(f"Successfully scraped {comp_url.url}: ¥{price} ({stock})")
+
+        # Trigger LINE notifications (price loss / recovery / stock out)
+        try:
+            from services.notifications import check_and_notify_price_event
+            await check_and_notify_price_event(db, comp_url, price, stock)
+        except Exception as e:
+            logger.error(f"Notification check failed for {comp_url.url}: {e}")
+
         return True
     else:
         logger.warning(f"Failed to extract price from {comp_url.url}")

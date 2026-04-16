@@ -100,6 +100,15 @@ def verify_session(
     db.refresh(current_user)
     return {"status": "verified", "plan": current_user.plan}
 
+async def _notify_subscription(db, user, event: str, plan: str):
+    """LINE 通知の安全ラッパー（失敗してもwebhookを止めない）。"""
+    try:
+        from services.notifications import notify_subscription_event
+        await notify_subscription_event(db, user, event, plan)
+    except Exception as e:
+        logger.error(f"Failed to send subscription notification: {e}")
+
+
 @router.post("/webhook")
 async def stripe_webhook(request: Request, stripe_signature: str = Header(..., alias="stripe-signature"), db: Session = Depends(get_db)):
     _, _, webhook_secret, _ = get_stripe_config()
@@ -132,6 +141,7 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(..., a
                 user.plan = "pro"
                 db.commit()
                 logger.info(f"User {user.id} upgraded to pro via checkout")
+                await _notify_subscription(db, user, "subscribed", "pro")
             else:
                 logger.warning(f"Webhook: user_id={user_id} not found in DB")
 
@@ -144,7 +154,8 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(..., a
             if user:
                 user.plan = "free"
                 db.commit()
-                
+                await _notify_subscription(db, user, "cancelled", "free")
+
     elif event['type'] == 'customer.subscription.updated':
         subscription = event['data']['object']
         customer_id = subscription.get("customer")

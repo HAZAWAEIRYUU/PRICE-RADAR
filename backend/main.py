@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from database import engine
 import models
-from routes import auth, products, prices, plan, stripe_api
+from routes import auth, products, prices, plan, stripe_api, notifications
 import os
 import logging
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -73,6 +73,7 @@ app.include_router(products.router, prefix="/api", tags=["products"])
 app.include_router(prices.router, prefix="/api", tags=["prices"])
 app.include_router(plan.router, prefix="/api", tags=["plan"])
 app.include_router(stripe_api.router, prefix="/api/stripe", tags=["stripe"])
+app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 
 @app.get("/")
 def read_root():

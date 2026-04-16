@@ -11,6 +11,7 @@ import {
   Menu,
   X,
   Crown,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/dashboard", label: "ダッシュボード", icon: LayoutDashboard },
   { href: "/products", label: "商品管理", icon: Package },
   { href: "/pricing", label: "プラン", icon: Crown },
+  { href: "/settings", label: "設定", icon: Settings },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {

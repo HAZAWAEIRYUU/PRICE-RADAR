@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { login, googleLogin, getGoogleAuthUrl } from "@/lib/auth";
+import { login, googleLogin, getGoogleAuthUrl, lineLogin, getLineAuthUrl } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Radar, Eye, EyeOff, Loader2 } from "lucide-react";
 import { GoogleIcon } from "@/components/google-icon";
+import { LineIcon } from "@/components/line-icon";
 
 
 function LoginContent() {
@@ -25,13 +26,30 @@ function LoginContent() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [lineLoading, setLineLoading] = useState(false);
 
-  // Handle Google OAuth callback
+  // Handle Google or LINE OAuth callback (state="line" indicates LINE flow)
   useEffect(() => {
     const code = searchParams.get("code");
-    if (code) {
+    if (!code) return;
+
+    const provider = searchParams.get("state")?.startsWith("line:") ? "line" : "google";
+    const redirectUri = `${window.location.origin}/login/`;
+
+    if (provider === "line") {
+      setLineLoading(true);
+      lineLogin(code, redirectUri)
+        .then(() => {
+          window.location.href = "/dashboard/";
+        })
+        .catch((err) => {
+          console.error("LINE auth failed:", err?.response?.data || err);
+          setError("LINEアカウントでのログインに失敗しました。");
+          setLineLoading(false);
+          window.history.replaceState({}, "", "/login/");
+        });
+    } else {
       setGoogleLoading(true);
-      const redirectUri = `${window.location.origin}/login/`;
       googleLogin(code, redirectUri)
         .then(() => {
           window.location.href = "/dashboard/";
@@ -70,14 +88,26 @@ function LoginContent() {
     }
   };
 
-  if (googleLoading) {
+  const handleLineLogin = () => {
+    const redirectUri = `${window.location.origin}/login/`;
+    const state = `line:${Math.random().toString(36).substring(2, 15)}`;
+    const url = getLineAuthUrl(redirectUri, state);
+    if (url) {
+      window.location.href = url;
+    } else {
+      setError("LINE認証が利用できません。");
+    }
+  };
+
+  if (googleLoading || lineLoading) {
+    const providerLabel = lineLoading ? "LINE" : "Google";
     return (
       <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-emerald-950/20" />
         <Card className="relative w-full max-w-md mx-4 border-border/50 bg-card/80 backdrop-blur-xl shadow-2xl shadow-black/40">
           <CardContent className="py-16 text-center">
             <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mx-auto mb-4" />
-            <p className="text-muted-foreground">Googleアカウントで認証中...</p>
+            <p className="text-muted-foreground">{providerLabel}アカウントで認証中...</p>
           </CardContent>
         </Card>
       </div>
@@ -125,10 +155,20 @@ function LoginContent() {
             type="button"
             variant="outline"
             onClick={handleGoogleLogin}
-            className="w-full h-11 mb-5 bg-white hover:bg-gray-50 text-gray-700 border-gray-300 font-medium transition-all duration-200"
+            className="w-full h-11 mb-3 bg-white hover:bg-gray-50 text-gray-700 border-gray-300 font-medium transition-all duration-200"
           >
             <GoogleIcon className="w-5 h-5 mr-2" />
             Googleでログイン
+          </Button>
+
+          {/* LINE Login Button */}
+          <Button
+            type="button"
+            onClick={handleLineLogin}
+            className="w-full h-11 mb-5 bg-[#06C755] hover:bg-[#05B04C] text-white font-medium transition-all duration-200"
+          >
+            <LineIcon className="w-5 h-5 mr-2" />
+            LINEでログイン
           </Button>
 
           {/* Separator */}

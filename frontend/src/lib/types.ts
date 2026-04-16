@@ -97,3 +97,19 @@ export interface PlanInfo {
   usage: PlanUsage;
 }
 
+// Notification types
+export interface NotificationSettings {
+  notification_enabled: boolean;
+  notify_price_loss: boolean;
+  notify_price_recovery: boolean;
+  notify_stock_change: boolean;
+  notify_subscription: boolean;
+}
+
+export interface LineLinkStatus {
+  linked: boolean;
+  line_user_id: string | null;
+  line_display_name: string | null;
+  bot_basic_id: string | null;
+}
+

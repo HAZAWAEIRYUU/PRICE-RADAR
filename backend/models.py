@@ -15,9 +15,19 @@ class User(Base):
     plan = Column(String, default="free")  # free / pro / enterprise
     stripe_customer_id = Column(String, nullable=True, index=True)
     stripe_subscription_id = Column(String, nullable=True, index=True)
+    # LINE integration
+    line_user_id = Column(String, nullable=True, unique=True, index=True)
+    line_display_name = Column(String, nullable=True)
+    # Notification preferences
+    notification_enabled = Column(Boolean, default=True, server_default=sa.text("true"), nullable=False)
+    notify_price_loss = Column(Boolean, default=True, server_default=sa.text("true"), nullable=False)
+    notify_price_recovery = Column(Boolean, default=True, server_default=sa.text("true"), nullable=False)
+    notify_stock_change = Column(Boolean, default=True, server_default=sa.text("true"), nullable=False)
+    notify_subscription = Column(Boolean, default=False, server_default=sa.text("false"), nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=sa.func.now())
 
     products = relationship("Product", back_populates="owner", cascade="all, delete-orphan")
+    notification_logs = relationship("NotificationLog", back_populates="user", cascade="all, delete-orphan")
 
 class Product(Base):
     __tablename__ = "products"
@@ -57,6 +67,20 @@ class PriceHistory(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=sa.func.now())
 
     competitor_url = relationship("CompetitorUrl", back_populates="price_histories")
+
+class NotificationLog(Base):
+    __tablename__ = "notification_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    event_type = Column(String, nullable=False, index=True)  # price_loss / price_recovery / stock_out / pro_subscribed
+    entity_id = Column(Integer, nullable=True, index=True)  # competitor_url_id etc.
+    previous_state = Column(String, nullable=True)
+    current_state = Column(String, nullable=True)
+    line_message_id = Column(String, nullable=True)
+    sent_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=sa.func.now(), index=True)
+
+    user = relationship("User", back_populates="notification_logs")
 
 # Plan limits configuration
 PLAN_LIMITS = {

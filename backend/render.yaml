@@ -23,3 +23,13 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
+      - key: LINE_LOGIN_CHANNEL_ID
+        sync: false
+      - key: LINE_LOGIN_CHANNEL_SECRET
+        sync: false
+      - key: LINE_MESSAGING_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_BOT_BASIC_ID
+        sync: false
+      - key: OPERATOR_LINE_USER_ID
+        sync: false

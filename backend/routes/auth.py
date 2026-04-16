@@ -161,3 +161,80 @@ async def google_auth(request: Request, body: schemas.GoogleAuthRequest, db: Ses
     )
     return {"access_token": jwt_token, "token_type": "bearer"}
 
+
+@router.post("/auth/line", response_model=schemas.Token)
+@limiter.limit("10/minute")
+async def line_auth(request: Request, body: schemas.LineAuthRequest, db: Session = Depends(get_db)):
+    """LINE Login: 認可コードを access_token に交換、profile 取得、ユーザー作成/連携。
+
+    body.link_to_user_id が指定されている場合は、そのユーザーに LINE を連携。
+    指定されていなければ、line_user_id で既存ユーザーを検索 or 新規作成。
+    """
+    from services.line_login import exchange_code, get_user_profile_from_id_token
+
+    tokens = await exchange_code(body.code, body.redirect_uri)
+    if not tokens:
+        raise HTTPException(status_code=400, detail="Failed to exchange LINE authorization code")
+
+    id_token = tokens.get("id_token")
+    if not id_token:
+        raise HTTPException(status_code=400, detail="LINE response missing id_token (is openid scope set?)")
+
+    profile = await get_user_profile_from_id_token(id_token)
+    if not profile:
+        raise HTTPException(status_code=400, detail="Failed to decode LINE id_token")
+
+    line_user_id = profile["user_id"]
+    display_name = profile.get("display_name") or ""
+
+    # Case 1: Link to existing user (already authenticated via JWT)
+    if body.link_to_user_id is not None:
+        target = db.query(models.User).filter(models.User.id == body.link_to_user_id).first()
+        if not target:
+            raise HTTPException(status_code=404, detail="Target user not found")
+        # 別ユーザーが同じ LINE ID を使用済みならエラー
+        existing = db.query(models.User).filter(
+            models.User.line_user_id == line_user_id,
+            models.User.id != target.id,
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="このLINEアカウントは既に他のユーザーと連携されています")
+        target.line_user_id = line_user_id
+        target.line_display_name = display_name
+        db.commit()
+        access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+        jwt_token = auth.create_access_token(
+            data={"sub": target.username, "user_id": target.id},
+            expires_delta=access_token_expires,
+        )
+        return {"access_token": jwt_token, "token_type": "bearer"}
+
+    # Case 2: Login flow — find existing or create new
+    user = db.query(models.User).filter(models.User.line_user_id == line_user_id).first()
+    if not user:
+        base_username = "line_" + line_user_id[-8:].lower()
+        username = base_username
+        counter = 1
+        while db.query(models.User).filter(models.User.username == username).first():
+            username = f"{base_username}_{counter}"
+            counter += 1
+
+        random_password = secrets.token_urlsafe(32)
+        user = models.User(
+            username=username,
+            email=None,
+            hashed_password=auth.get_password_hash(random_password),
+            plan="free",
+            line_user_id=line_user_id,
+            line_display_name=display_name,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+    jwt_token = auth.create_access_token(
+        data={"sub": user.username, "user_id": user.id},
+        expires_delta=access_token_expires,
+    )
+    return {"access_token": jwt_token, "token_type": "bearer"}
