@@ -55,16 +55,25 @@ export function getGoogleAuthUrl(redirectUri: string): string {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
-export async function lineLogin(code: string, redirectUri: string, linkToUserId?: number) {
+export async function lineLogin(code: string, redirectUri: string) {
   const response = await api.post("/api/auth/line", {
     code,
     redirect_uri: redirectUri,
-    link_to_user_id: linkToUserId ?? null,
   });
 
   const { access_token } = response.data;
   Cookies.set("access_token", access_token, { expires: 7, sameSite: "lax", secure: process.env.NODE_ENV === "production" });
   prewarmBackend();
+  return response.data;
+}
+
+// 認証済みユーザーに LINE を連携する（JWT 必須、バックエンドで current_user の ID を使用）。
+// axios のインターセプターが Authorization ヘッダを自動付与する。
+export async function lineLink(code: string, redirectUri: string) {
+  const response = await api.post("/api/auth/line/link", {
+    code,
+    redirect_uri: redirectUri,
+  });
   return response.data;
 }
 

@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import api from "@/lib/api";
-import { lineLogin, getLineAuthUrl } from "@/lib/auth";
+import { lineLink, getLineAuthUrl } from "@/lib/auth";
 import { NotificationSettings, LineLinkStatus } from "@/lib/types";
 import {
   Card,
@@ -35,7 +35,7 @@ function SettingsContent() {
     if (code && state.startsWith("line:link:")) {
       setLinking(true);
       const redirectUri = `${window.location.origin}/settings/`;
-      lineLogin(code, redirectUri)
+      lineLink(code, redirectUri)
         .then(() => {
           toast.success("LINE連携が完了しました");
           window.history.replaceState({}, "", "/settings/");
@@ -175,7 +175,7 @@ function SettingsContent() {
                 </Badge>
               </div>
 
-              {friendAddUrl && (
+              {friendAddUrl ? (
                 <div className="rounded-lg border border-border/30 bg-muted/30 p-4 text-sm space-y-2">
                   <p className="font-medium flex items-center gap-2">
                     <MessageCircle className="w-4 h-4" />
@@ -189,6 +189,16 @@ function SettingsContent() {
                   >
                     友達追加リンク <ExternalLink className="w-3 h-3" />
                   </a>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-400">
+                  <p className="font-medium flex items-center gap-2">
+                    <MessageCircle className="w-4 h-4" />
+                    Bot ID が設定されていません
+                  </p>
+                  <p className="text-xs mt-1 text-amber-300/80">
+                    管理者にご連絡ください (LINE_BOT_BASIC_ID の設定が必要です)。
+                  </p>
                 </div>
               )}
 

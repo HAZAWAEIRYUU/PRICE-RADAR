@@ -162,17 +162,11 @@ async def google_auth(request: Request, body: schemas.GoogleAuthRequest, db: Ses
     return {"access_token": jwt_token, "token_type": "bearer"}
 
 
-@router.post("/auth/line", response_model=schemas.Token)
-@limiter.limit("10/minute")
-async def line_auth(request: Request, body: schemas.LineAuthRequest, db: Session = Depends(get_db)):
-    """LINE Login: 認可コードを access_token に交換、profile 取得、ユーザー作成/連携。
-
-    body.link_to_user_id が指定されている場合は、そのユーザーに LINE を連携。
-    指定されていなければ、line_user_id で既存ユーザーを検索 or 新規作成。
-    """
+async def _resolve_line_profile(code: str, redirect_uri: str):
+    """LINE 認可コードを交換し id_token から (line_user_id, display_name) を返す。失敗時 HTTPException。"""
     from services.line_login import exchange_code, get_user_profile_from_id_token
 
-    tokens = await exchange_code(body.code, body.redirect_uri)
+    tokens = await exchange_code(code, redirect_uri)
     if not tokens:
         raise HTTPException(status_code=400, detail="Failed to exchange LINE authorization code")
 
@@ -184,32 +178,18 @@ async def line_auth(request: Request, body: schemas.LineAuthRequest, db: Session
     if not profile:
         raise HTTPException(status_code=400, detail="Failed to decode LINE id_token")
 
-    line_user_id = profile["user_id"]
-    display_name = profile.get("display_name") or ""
+    return profile["user_id"], profile.get("display_name") or ""
 
-    # Case 1: Link to existing user (already authenticated via JWT)
-    if body.link_to_user_id is not None:
-        target = db.query(models.User).filter(models.User.id == body.link_to_user_id).first()
-        if not target:
-            raise HTTPException(status_code=404, detail="Target user not found")
-        # 別ユーザーが同じ LINE ID を使用済みならエラー
-        existing = db.query(models.User).filter(
-            models.User.line_user_id == line_user_id,
-            models.User.id != target.id,
-        ).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="このLINEアカウントは既に他のユーザーと連携されています")
-        target.line_user_id = line_user_id
-        target.line_display_name = display_name
-        db.commit()
-        access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
-        jwt_token = auth.create_access_token(
-            data={"sub": target.username, "user_id": target.id},
-            expires_delta=access_token_expires,
-        )
-        return {"access_token": jwt_token, "token_type": "bearer"}
 
-    # Case 2: Login flow — find existing or create new
+@router.post("/auth/line", response_model=schemas.Token)
+@limiter.limit("10/minute")
+async def line_auth(request: Request, body: schemas.LineAuthRequest, db: Session = Depends(get_db)):
+    """LINE Login: 認可コードで既存ユーザー検索 or 新規作成して JWT を返す。
+
+    既存ユーザーへの連携は `POST /auth/line/link` を使用（JWT 必須）。
+    """
+    line_user_id, display_name = await _resolve_line_profile(body.code, body.redirect_uri)
+
     user = db.query(models.User).filter(models.User.line_user_id == line_user_id).first()
     if not user:
         base_username = "line_" + line_user_id[-8:].lower()
@@ -238,3 +218,42 @@ async def line_auth(request: Request, body: schemas.LineAuthRequest, db: Session
         expires_delta=access_token_expires,
     )
     return {"access_token": jwt_token, "token_type": "bearer"}
+
+
+@router.post("/auth/line/link", response_model=schemas.LineLinkStatus)
+@limiter.limit("10/minute")
+async def line_link(
+    request: Request,
+    body: schemas.LineAuthRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """認証済みユーザーに LINE アカウントを連携する（JWT 必須、current_user の ID を使用）。
+
+    別ユーザーが同じ LINE ID を既に使用している場合はエラー。
+    """
+    from services import line_messaging
+
+    line_user_id, display_name = await _resolve_line_profile(body.code, body.redirect_uri)
+
+    existing = db.query(models.User).filter(
+        models.User.line_user_id == line_user_id,
+        models.User.id != current_user.id,
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="このLINEアカウントは既に他のユーザーと連携されています",
+        )
+
+    current_user.line_user_id = line_user_id
+    current_user.line_display_name = display_name
+    db.commit()
+    db.refresh(current_user)
+
+    return schemas.LineLinkStatus(
+        linked=True,
+        line_user_id=current_user.line_user_id,
+        line_display_name=current_user.line_display_name,
+        bot_basic_id=line_messaging.get_bot_basic_id(),
+    )

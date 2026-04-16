@@ -114,7 +114,6 @@ class GoogleAuthRequest(BaseModel):
 class LineAuthRequest(BaseModel):
     code: str
     redirect_uri: str
-    link_to_user_id: Optional[int] = None  # 既存ユーザーへのLINE連携時に使用
 
 class NotificationSettings(BaseModel):
     notification_enabled: bool

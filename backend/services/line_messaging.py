@@ -2,14 +2,46 @@
 
 公式SDKを使わず httpx ベースで実装（既存依存と整合）。
 """
+import asyncio
 import os
 import logging
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+from urllib.parse import quote
 import httpx
 
 logger = logging.getLogger("priceradar.line")
 
 LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push"
+
+# ユーザーが bot をブロック or 友達解除した場合、LINE API は 403 を返す
+LINE_STATUS_USER_BLOCKED = 403
+LINE_STATUS_RATE_LIMIT = 429
+
+# JST (UTC+9)
+JST = timezone(timedelta(hours=9))
+
+
+class LinePushResult:
+    """LINE push の結果を返すコンテナ。
+
+    - request_id: 成功時の LINE-request-id（None なら失敗）
+    - status_code: HTTP ステータス (取得できた場合)
+    - blocked: True なら bot がユーザーにブロックされている（403）
+    - rate_limited: True なら LINE 側のレート制限 (429)
+    """
+    __slots__ = ("request_id", "status_code", "blocked", "rate_limited")
+
+    def __init__(self, request_id: Optional[str] = None, status_code: Optional[int] = None,
+                 blocked: bool = False, rate_limited: bool = False):
+        self.request_id = request_id
+        self.status_code = status_code
+        self.blocked = blocked
+        self.rate_limited = rate_limited
+
+    @property
+    def ok(self) -> bool:
+        return self.request_id is not None
 
 
 def _get_access_token() -> Optional[str]:
@@ -31,42 +63,85 @@ def get_friend_add_url() -> Optional[str]:
     return f"https://line.me/R/ti/p/@{clean_id}"
 
 
-async def push_text(line_user_id: str, text: str) -> Optional[str]:
-    """指定のLINEユーザーIDにテキストメッセージを送信。
+async def _post_line(payload: dict, *, label: str) -> LinePushResult:
+    """LINE /v2/bot/message/push への POST 共通処理。
 
-    成功時は LINE API レスポンスの x-line-request-id を返す。
-    失敗時は None を返してログを残す。
+    - 429 (rate limit) は exponential backoff で 1 回だけリトライ
+    - 403 は bot ブロック/フレンド解除として blocked=True を返す
+    - 成功時は LinePushResult(request_id=...)
     """
     token = _get_access_token()
     if not token:
         logger.error("LINE_MESSAGING_CHANNEL_ACCESS_TOKEN is not configured")
-        return None
+        return LinePushResult()
 
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
+
+    target_preview = payload.get("to", "?")[:8]
+
+    attempts = [0, 1.0]  # 初回 + 1秒後リトライ (429 のみ)
+    last_status: Optional[int] = None
+    last_body = ""
+    for i, delay in enumerate(attempts):
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(LINE_PUSH_ENDPOINT, json=payload, headers=headers)
+        except Exception as e:
+            logger.error(f"LINE {label} exception: {e}")
+            return LinePushResult()
+
+        last_status = resp.status_code
+        last_body = resp.text[:200]
+
+        if resp.status_code == 200:
+            request_id = resp.headers.get("x-line-request-id")
+            logger.info(f"LINE {label} sent to {target_preview}... (req_id={request_id}, attempt={i+1})")
+            return LinePushResult(request_id=request_id or "ok", status_code=200)
+
+        if resp.status_code == LINE_STATUS_USER_BLOCKED:
+            logger.warning(
+                f"LINE {label} blocked by user: to={target_preview}... body={last_body}"
+            )
+            return LinePushResult(status_code=403, blocked=True)
+
+        if resp.status_code == LINE_STATUS_RATE_LIMIT and i < len(attempts) - 1:
+            logger.warning(f"LINE {label} rate limited (429) — retrying once")
+            continue  # retry with delay
+
+        # Other error — stop retrying
+        break
+
+    logger.warning(
+        f"LINE {label} failed: status={last_status} body={last_body} to={target_preview}..."
+    )
+    return LinePushResult(
+        status_code=last_status,
+        rate_limited=(last_status == LINE_STATUS_RATE_LIMIT),
+    )
+
+
+async def push_text(line_user_id: str, text: str) -> Optional[str]:
+    """指定のLINEユーザーIDにテキストメッセージを送信。
+
+    成功時は LINE API レスポンスの x-line-request-id を返す。失敗時は None。
+    詳細な結果が欲しい場合は `push_text_detailed` を使用。
+    """
+    result = await push_text_detailed(line_user_id, text)
+    return result.request_id
+
+
+async def push_text_detailed(line_user_id: str, text: str) -> LinePushResult:
+    """push_text のラッパー。429/403 の詳細を含む LinePushResult を返す。"""
     payload = {
         "to": line_user_id,
         "messages": [{"type": "text", "text": text}],
     }
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(LINE_PUSH_ENDPOINT, json=payload, headers=headers)
-        if resp.status_code == 200:
-            request_id = resp.headers.get("x-line-request-id")
-            logger.info(f"LINE push sent to {line_user_id[:8]}... (req_id={request_id})")
-            return request_id or "ok"
-        else:
-            logger.warning(
-                f"LINE push failed: status={resp.status_code} body={resp.text[:200]} "
-                f"to={line_user_id[:8]}..."
-            )
-            return None
-    except Exception as e:
-        logger.error(f"LINE push exception: {e}")
-        return None
+    return await _post_line(payload, label="push")
 
 
 async def push_flex_price_alert(
@@ -80,16 +155,23 @@ async def push_flex_price_alert(
     diff: float,
     product_id: int,
     frontend_url: str = "https://priceradar.space",
+    scraped_at: Optional[datetime] = None,
 ) -> Optional[str]:
     """価格関連の Flex Message を送信。"""
-    token = _get_access_token()
-    if not token:
-        logger.error("LINE_MESSAGING_CHANNEL_ACCESS_TOKEN is not configured")
-        return None
-
     sign = "+" if diff >= 0 else ""
     diff_text = f"{sign}¥{int(abs(diff)):,}" if diff != 0 else "¥0"
     diff_color = "#E5484D" if diff > 0 else "#30A46C"
+
+    # 価格を確認した時刻 (JST)。渡されない場合は "現在" を表示
+    if scraped_at is not None:
+        if scraped_at.tzinfo is None:
+            scraped_at = scraped_at.replace(tzinfo=timezone.utc)
+        timestamp_text = scraped_at.astimezone(JST).strftime("%m/%d %H:%M JST")
+    else:
+        timestamp_text = datetime.now(JST).strftime("%m/%d %H:%M JST")
+
+    # product_id は int の前提だが、URL 組み立て時は念のためエンコード
+    safe_product_id = quote(str(int(product_id)), safe="")
 
     flex = {
         "type": "bubble",
@@ -135,6 +217,15 @@ async def push_flex_price_alert(
                         {"type": "text", "text": diff_text, "size": "sm", "align": "end", "color": diff_color, "weight": "bold"},
                     ],
                 },
+                {"type": "separator", "margin": "md"},
+                {
+                    "type": "text",
+                    "text": f"最終確認: {timestamp_text}",
+                    "size": "xs",
+                    "color": "#888888",
+                    "align": "end",
+                    "margin": "sm",
+                },
             ],
         },
         "footer": {
@@ -148,34 +239,16 @@ async def push_flex_price_alert(
                     "action": {
                         "type": "uri",
                         "label": "ダッシュボードを開く",
-                        "uri": f"{frontend_url}/prices/?id={product_id}",
+                        "uri": f"{frontend_url}/prices/?id={safe_product_id}",
                     },
                 }
             ],
         },
     }
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
     payload = {
         "to": line_user_id,
         "messages": [{"type": "flex", "altText": title, "contents": flex}],
     }
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(LINE_PUSH_ENDPOINT, json=payload, headers=headers)
-        if resp.status_code == 200:
-            request_id = resp.headers.get("x-line-request-id")
-            logger.info(f"LINE flex sent to {line_user_id[:8]}... (req_id={request_id})")
-            return request_id or "ok"
-        else:
-            logger.warning(
-                f"LINE flex failed: status={resp.status_code} body={resp.text[:200]}"
-            )
-            return None
-    except Exception as e:
-        logger.error(f"LINE flex exception: {e}")
-        return None
+    result = await _post_line(payload, label="flex")
+    return result.request_id

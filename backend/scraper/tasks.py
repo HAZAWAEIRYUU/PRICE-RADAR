@@ -23,12 +23,16 @@ async def scrape_competitor_url(db: Session, comp_url: models.CompetitorUrl):
         db.commit()
         logger.info(f"Successfully scraped {comp_url.url}: ¥{price} ({stock})")
 
-        # Trigger LINE notifications (price loss / recovery / stock out)
+        # Trigger LINE notifications (price loss / recovery / stock out / stock in).
+        # 通知失敗はスクレイプ成功を巻き込まない。exc_info でスタックトレースも残す。
         try:
             from services.notifications import check_and_notify_price_event
             await check_and_notify_price_event(db, comp_url, price, stock)
-        except Exception as e:
-            logger.error(f"Notification check failed for {comp_url.url}: {e}")
+        except Exception:
+            logger.exception(
+                "Notification check failed for comp_url_id=%s url=%s",
+                comp_url.id, comp_url.url,
+            )
 
         return True
     else:
