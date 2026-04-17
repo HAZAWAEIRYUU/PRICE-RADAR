@@ -1,9 +1,15 @@
 services:
   - type: web
     name: priceradar-api
-    region: singapore
+    # Region is immutable on an existing service — must match what the
+    # service was provisioned with (oregon). Switching regions requires
+    # delete + recreate, which is tracked as a separate migration.
+    region: oregon
     env: python
-    plan: pro
+    # Match the currently-running instance. Upgrade plan via the Render
+    # dashboard + update this file in a dedicated change if/when we move
+    # off free.
+    plan: free
     healthCheckPath: /health
     buildCommand: pip install -r requirements.txt && alembic upgrade head
     startCommand: gunicorn main:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
