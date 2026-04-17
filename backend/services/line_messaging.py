@@ -18,8 +18,17 @@ LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push"
 LINE_STATUS_USER_BLOCKED = 403
 LINE_STATUS_RATE_LIMIT = 429
 
-# JST (UTC+9)
-JST = timezone(timedelta(hours=9))
+# Display timezone for notifications. Defaults to JST (UTC+9) since the
+# app is Japan-first; override with DISPLAY_TZ_OFFSET_HOURS to adjust.
+_DEFAULT_TZ_OFFSET_HOURS = 9
+try:
+    _tz_offset_hours = int(os.environ.get("DISPLAY_TZ_OFFSET_HOURS", _DEFAULT_TZ_OFFSET_HOURS))
+except (TypeError, ValueError):
+    _tz_offset_hours = _DEFAULT_TZ_OFFSET_HOURS
+DISPLAY_TZ = timezone(timedelta(hours=_tz_offset_hours))
+_DISPLAY_TZ_LABEL = "JST" if _tz_offset_hours == 9 else f"UTC{'+' if _tz_offset_hours >= 0 else ''}{_tz_offset_hours}"
+# Keep the legacy name for anything that imports it.
+JST = DISPLAY_TZ
 
 
 class LinePushResult:
@@ -166,9 +175,9 @@ async def push_flex_price_alert(
     if scraped_at is not None:
         if scraped_at.tzinfo is None:
             scraped_at = scraped_at.replace(tzinfo=timezone.utc)
-        timestamp_text = scraped_at.astimezone(JST).strftime("%m/%d %H:%M JST")
+        timestamp_text = scraped_at.astimezone(DISPLAY_TZ).strftime(f"%m/%d %H:%M {_DISPLAY_TZ_LABEL}")
     else:
-        timestamp_text = datetime.now(JST).strftime("%m/%d %H:%M JST")
+        timestamp_text = datetime.now(DISPLAY_TZ).strftime(f"%m/%d %H:%M {_DISPLAY_TZ_LABEL}")
 
     # product_id は int の前提だが、URL 組み立て時は念のためエンコード
     safe_product_id = quote(str(int(product_id)), safe="")

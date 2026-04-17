@@ -68,6 +68,22 @@ class PriceHistory(Base):
 
     competitor_url = relationship("CompetitorUrl", back_populates="price_histories")
 
+class ProcessedStripeEvent(Base):
+    """Stripe webhook idempotency guard.
+
+    Stripe retries webhook deliveries on 5xx; without this table, the same
+    `checkout.session.completed` event could upgrade a user to Pro twice,
+    log duplicate notifications, or overwrite a later plan change with a
+    stale one. The event_id is unique and set by Stripe, so a uniqueness
+    violation on insert = "already handled, skip".
+    """
+    __tablename__ = "processed_stripe_events"
+
+    event_id = Column(String, primary_key=True)
+    event_type = Column(String, nullable=False)
+    processed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), server_default=sa.func.now(), nullable=False)
+
+
 class NotificationLog(Base):
     __tablename__ = "notification_logs"
 

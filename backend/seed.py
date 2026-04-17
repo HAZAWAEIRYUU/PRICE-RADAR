@@ -1,16 +1,39 @@
 import os
-from datetime import datetime, timedelta
+import secrets
+from datetime import datetime, timedelta, timezone
 from database import SessionLocal, engine
 import models, auth
+
+
+def _require_admin_password() -> str:
+    """Get the seed admin password from env, or fail loudly.
+
+    In any environment that looks production-ish we refuse to invent a
+    password. Locally, if the developer hasn't set one we generate a
+    random string and print it to stdout so seed remains convenient.
+    """
+    pw = os.environ.get("SEED_ADMIN_PASSWORD")
+    if pw:
+        return pw
+    prod_markers = ("DATABASE_URL", "RENDER", "RENDER_SERVICE_ID")
+    if any(os.environ.get(k) for k in prod_markers) or os.environ.get("PRICERADAR_ENV") == "production":
+        raise RuntimeError(
+            "SEED_ADMIN_PASSWORD is required when seeding a production database. "
+            "Refusing to create an admin user with a hardcoded password."
+        )
+    generated = secrets.token_urlsafe(18)
+    print(f"[seed] SEED_ADMIN_PASSWORD not set — generated temporary dev password: {generated}")
+    return generated
+
 
 def seed():
     models.Base.metadata.create_all(bind=engine)
     db = SessionLocal()
-    
+
     # 1. Create admin user
     admin = db.query(models.User).filter(models.User.username == "admin").first()
     if not admin:
-        hashed_password = auth.get_password_hash("admin123")
+        hashed_password = auth.get_password_hash(_require_admin_password())
         admin = models.User(
             username="admin",
             email="admin@priceradar.space",
@@ -99,7 +122,7 @@ def seed():
                         competitor_url_id=comp.id,
                         price=price,
                         stock_status="在庫あり",
-                        scraped_at=datetime.utcnow() - timedelta(days=2-i)
+                        scraped_at=datetime.now(timezone.utc) - timedelta(days=2-i)
                     )
                     db.add(history)
             
