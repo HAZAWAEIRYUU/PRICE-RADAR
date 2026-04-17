@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "https://priceradar-api.onrender.com",
+  baseURL: process.env.NEXT_PUBLIC_API_URL || "https://api.priceradar.space",
   headers: {
     "Content-Type": "application/json",
   },
