@@ -1,26 +1,27 @@
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 from database import SessionLocal, engine
 import models, auth
 
 
-def _require_admin_password() -> str:
-    """Get the seed admin password from env, or fail loudly.
+def _resolve_admin_password() -> Optional[str]:
+    """Return a password for a first-time admin creation, or None to skip.
 
-    In any environment that looks production-ish we refuse to invent a
-    password. Locally, if the developer hasn't set one we generate a
-    random string and print it to stdout so seed remains convenient.
+    Prefer SEED_ADMIN_PASSWORD from the environment. If it isn't set we
+    refuse to fall back to a hardcoded credential in any production-ish
+    environment — instead we return None so the caller can skip creating
+    the admin user (the deploy should not fail over optional seed data).
+    In local dev we generate a random password and print it so seed
+    remains convenient.
     """
     pw = os.environ.get("SEED_ADMIN_PASSWORD")
     if pw:
         return pw
     prod_markers = ("DATABASE_URL", "RENDER", "RENDER_SERVICE_ID")
     if any(os.environ.get(k) for k in prod_markers) or os.environ.get("PRICERADAR_ENV") == "production":
-        raise RuntimeError(
-            "SEED_ADMIN_PASSWORD is required when seeding a production database. "
-            "Refusing to create an admin user with a hardcoded password."
-        )
+        return None
     generated = secrets.token_urlsafe(18)
     print(f"[seed] SEED_ADMIN_PASSWORD not set — generated temporary dev password: {generated}")
     return generated
@@ -33,17 +34,24 @@ def seed():
     # 1. Create admin user
     admin = db.query(models.User).filter(models.User.username == "admin").first()
     if not admin:
-        hashed_password = auth.get_password_hash(_require_admin_password())
-        admin = models.User(
-            username="admin",
-            email="admin@priceradar.space",
-            hashed_password=hashed_password,
-            plan="enterprise",
-        )
-        db.add(admin)
-        db.commit()
-        db.refresh(admin)
-        print("Created admin user (enterprise plan)")
+        admin_pw = _resolve_admin_password()
+        if admin_pw is None:
+            print(
+                "[seed] Skipping admin user creation: SEED_ADMIN_PASSWORD is not set in a "
+                "production-like environment. Set the env var and re-run seed to provision admin."
+            )
+        else:
+            hashed_password = auth.get_password_hash(admin_pw)
+            admin = models.User(
+                username="admin",
+                email="admin@priceradar.space",
+                hashed_password=hashed_password,
+                plan="enterprise",
+            )
+            db.add(admin)
+            db.commit()
+            db.refresh(admin)
+            print("Created admin user (enterprise plan)")
 
     # 2. Create sample products (bound to admin user)
     products_data = [
@@ -92,6 +100,13 @@ def seed():
             ]
         }
     ]
+
+    if admin is None:
+        print("[seed] No admin user — skipping sample product population")
+        db.commit()
+        db.close()
+        print("Seeding complete.")
+        return
 
     for pdata in products_data:
         if not db.query(models.Product).filter(
