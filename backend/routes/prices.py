@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload, aliased
 from typing import List
 from database import get_db
 import models, schemas, auth
@@ -17,26 +18,51 @@ def get_price_alerts(db: Session = Depends(get_db), current_user: models.User = 
             models.Product.is_active == True,
             models.Product.user_id == current_user.id
         ).all()
+    if not products:
+        return []
+
+    url_ids = [url.id for p in products for url in p.competitor_urls]
+    if not url_ids:
+        return []
+
+    # Fetch the latest PriceHistory row per competitor_url in a single query
+    # using a correlated subquery on the max(scraped_at) per competitor_url_id.
+    latest_subq = (
+        db.query(
+            models.PriceHistory.competitor_url_id.label("cid"),
+            func.max(models.PriceHistory.scraped_at).label("max_ts"),
+        )
+        .filter(models.PriceHistory.competitor_url_id.in_(url_ids))
+        .group_by(models.PriceHistory.competitor_url_id)
+        .subquery()
+    )
+    latest_rows = (
+        db.query(models.PriceHistory)
+        .join(
+            latest_subq,
+            (models.PriceHistory.competitor_url_id == latest_subq.c.cid)
+            & (models.PriceHistory.scraped_at == latest_subq.c.max_ts),
+        )
+        .all()
+    )
+    latest_by_url = {row.competitor_url_id: row for row in latest_rows}
+
     alerts = []
-    
     for product in products:
         lowest_comp_name = None
         lowest_comp_price = None
         lowest_stock = None
-        
+
         for url in product.competitor_urls:
-            # Get latest price history
-            latest_history = db.query(models.PriceHistory)\
-                .filter(models.PriceHistory.competitor_url_id == url.id)\
-                .order_by(models.PriceHistory.scraped_at.desc()).first()
-                
-            if latest_history:
-                price = float(latest_history.price)
-                if lowest_comp_price is None or price < lowest_comp_price:
-                    lowest_comp_price = price
-                    lowest_comp_name = url.competitor_name
-                    lowest_stock = latest_history.stock_status
-                    
+            latest_history = latest_by_url.get(url.id)
+            if not latest_history or latest_history.price is None:
+                continue
+            price = float(latest_history.price)
+            if lowest_comp_price is None or price < lowest_comp_price:
+                lowest_comp_price = price
+                lowest_comp_name = url.competitor_name
+                lowest_stock = latest_history.stock_status
+
         if lowest_comp_price is not None and float(product.own_price) > lowest_comp_price:
             alerts.append({
                 "product_id": product.id,
@@ -47,7 +73,7 @@ def get_price_alerts(db: Session = Depends(get_db), current_user: models.User = 
                 "price_diff": str(float(product.own_price) - lowest_comp_price),
                 "stock_status": lowest_stock
             })
-            
+
     return alerts
 
 @router.get("/prices/{product_id}/history", response_model=List[schemas.PriceHistoryRecord])

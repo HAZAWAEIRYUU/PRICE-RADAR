@@ -1,6 +1,7 @@
 import os
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Header
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 import stripe
 from database import get_db
@@ -125,8 +126,19 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(..., a
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
+    # Idempotency: drop events Stripe has already successfully delivered.
+    event_id = event.get("id")
+    if event_id:
+        try:
+            db.add(models.ProcessedStripeEvent(event_id=event_id, event_type=event["type"]))
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            logger.info(f"Stripe webhook duplicate ignored: {event_id} ({event['type']})")
+            return {"status": "duplicate"}
+
     # Handle the event
-    logger.info(f"Stripe webhook received: {event['type']}")
+    logger.info(f"Stripe webhook received: {event['type']} id={event_id}")
 
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']

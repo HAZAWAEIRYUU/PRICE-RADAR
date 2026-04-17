@@ -9,13 +9,23 @@ from database import get_db
 import models
 import os
 
-# Security constants — SECRET_KEY from env var (critical for SaaS security)
+# Security constants — SECRET_KEY from env var (critical for SaaS security).
+# Any production marker (DATABASE_URL on Render, RENDER env, or explicit
+# PRICERADAR_ENV=production) forces the env var to be set. The local-dev
+# fallback is deliberately random per-process so it can never be mistaken
+# for a stable key, and any tokens issued locally become invalid on restart.
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
 if not SECRET_KEY:
-    if os.environ.get("DATABASE_URL"):
-        # Production environment detected (DATABASE_URL is set on Render)
+    _prod_markers = ("DATABASE_URL", "RENDER", "RENDER_SERVICE_ID")
+    if any(os.environ.get(k) for k in _prod_markers) or os.environ.get("PRICERADAR_ENV") == "production":
         raise RuntimeError("JWT_SECRET_KEY environment variable is required in production")
-    SECRET_KEY = "dev-only-fallback-key-DO-NOT-USE-IN-PRODUCTION"
+    import secrets as _secrets
+    SECRET_KEY = _secrets.token_urlsafe(64)
+    import logging as _logging
+    _logging.getLogger("priceradar.auth").warning(
+        "JWT_SECRET_KEY not set — generated a per-process ephemeral key. "
+        "Tokens will be invalidated on every restart. Set JWT_SECRET_KEY for a stable dev environment."
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 week
 

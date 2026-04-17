@@ -3,9 +3,17 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List
 from database import get_db
 import models, schemas, auth
-from urllib.parse import urlparse
+from services.url_safety import validate_safe_url, UnsafeUrlError
 
 router = APIRouter()
+
+
+def _check_competitor_url(url: str) -> None:
+    """Reject URLs that could SSRF the scraper. Raises HTTPException(400)."""
+    try:
+        validate_safe_url(url)
+    except UnsafeUrlError as e:
+        raise HTTPException(status_code=400, detail=f"無効なURL: {e}")
 
 @router.get("/products", response_model=List[schemas.Product])
 def get_products(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
@@ -81,9 +89,7 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
     db.flush()  # To get db_product.id
     
     for comp in product.competitor_urls:
-        parsed = urlparse(comp.url)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
-            raise HTTPException(status_code=400, detail=f"無効なURL: {comp.url}")
+        _check_competitor_url(comp.url)
         db_comp = models.CompetitorUrl(
             product_id=db_product.id,
             competitor_name=comp.competitor_name,
@@ -144,9 +150,7 @@ def add_competitor(product_id: int, comp: schemas.CompetitorUrlCreate, db: Sessi
             detail=f"競合URL数の上限に達しました（{current_user.plan}プラン: 1商品あたり{max_comps}件）。プランをアップグレードしてください。"
         )
         
-    parsed = urlparse(comp.url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        raise HTTPException(status_code=400, detail="有効なURLを入力してください（http:// または https:// で始まる必要があります）")
+    _check_competitor_url(comp.url)
 
     db_comp = models.CompetitorUrl(
         product_id=product_id,

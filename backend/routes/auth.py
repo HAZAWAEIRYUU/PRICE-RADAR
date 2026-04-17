@@ -81,7 +81,7 @@ def get_me(current_user: models.User = Depends(auth.get_current_user)):
     return current_user
 
 @router.post("/auth/google", response_model=schemas.Token)
-@limiter.limit("10/minute")
+@limiter.limit("5/minute")
 async def google_auth(request: Request, body: schemas.GoogleAuthRequest, db: Session = Depends(get_db)):
     """Google OAuth2 authentication: exchange code for token, get user info, create/link user."""
     client_id = os.environ.get("GOOGLE_CLIENT_ID")
@@ -91,43 +91,65 @@ async def google_auth(request: Request, body: schemas.GoogleAuthRequest, db: Ses
         raise HTTPException(status_code=500, detail="Google OAuth is not configured")
 
     # Exchange authorization code for access token
-    async with httpx.AsyncClient() as client:
-        token_response = await client.post(
-            "https://oauth2.googleapis.com/token",
-            data={
-                "code": body.code,
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "redirect_uri": body.redirect_uri,
-                "grant_type": "authorization_code",
-            },
-        )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            token_response = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": body.code,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "redirect_uri": body.redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+            )
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="Google authentication service unavailable")
 
     if token_response.status_code != 200:
         raise HTTPException(status_code=400, detail="Failed to exchange Google authorization code")
 
-    token_data = token_response.json()
-    access_token = token_data.get("access_token")
+    try:
+        token_data = token_response.json()
+    except ValueError:
+        raise HTTPException(status_code=502, detail="Invalid response from Google token endpoint")
 
-    if not access_token:
+    if not isinstance(token_data, dict):
+        raise HTTPException(status_code=502, detail="Unexpected token response from Google")
+
+    access_token = token_data.get("access_token")
+    if not isinstance(access_token, str) or not access_token:
         raise HTTPException(status_code=400, detail="No access token received from Google")
 
     # Get user info from Google
-    async with httpx.AsyncClient() as client:
-        userinfo_response = await client.get(
-            "https://www.googleapis.com/oauth2/v2/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            userinfo_response = await client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="Google userinfo endpoint unreachable")
 
     if userinfo_response.status_code != 200:
         raise HTTPException(status_code=400, detail="Failed to get Google user info")
 
-    google_user = userinfo_response.json()
-    google_email = google_user.get("email")
-    google_name = google_user.get("name", "")
+    try:
+        google_user = userinfo_response.json()
+    except ValueError:
+        raise HTTPException(status_code=502, detail="Invalid response from Google userinfo endpoint")
 
-    if not google_email:
+    if not isinstance(google_user, dict):
+        raise HTTPException(status_code=502, detail="Unexpected userinfo response from Google")
+
+    google_email = google_user.get("email")
+    google_name = google_user.get("name", "") or ""
+    google_email_verified = google_user.get("verified_email", True)
+
+    if not isinstance(google_email, str) or not google_email:
         raise HTTPException(status_code=400, detail="Google account has no email")
+    if not google_email_verified:
+        raise HTTPException(status_code=400, detail="Google account email is not verified")
 
     # Find existing user by email or create new one
     user = db.query(models.User).filter(models.User.email == google_email).first()
@@ -182,7 +204,7 @@ async def _resolve_line_profile(code: str, redirect_uri: str):
 
 
 @router.post("/auth/line", response_model=schemas.Token)
-@limiter.limit("10/minute")
+@limiter.limit("5/minute")
 async def line_auth(request: Request, body: schemas.LineAuthRequest, db: Session = Depends(get_db)):
     """LINE Login: 認可コードで既存ユーザー検索 or 新規作成して JWT を返す。
 
@@ -221,7 +243,7 @@ async def line_auth(request: Request, body: schemas.LineAuthRequest, db: Session
 
 
 @router.post("/auth/line/link", response_model=schemas.LineLinkStatus)
-@limiter.limit("10/minute")
+@limiter.limit("5/minute")
 async def line_link(
     request: Request,
     body: schemas.LineAuthRequest,

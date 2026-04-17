@@ -4,6 +4,7 @@ services:
     region: singapore
     env: python
     plan: pro
+    healthCheckPath: /health
     buildCommand: pip install -r requirements.txt && alembic upgrade head
     startCommand: gunicorn main:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
     envVars:

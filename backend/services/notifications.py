@@ -73,7 +73,7 @@ def _handle_blocked(db: Session, user: models.User) -> None:
     再度 LINE 連携すれば復旧可能。
     """
     logger.warning(
-        f"LINE bot blocked/unfriended by user {user.id} ({user.username}) — clearing line_user_id"
+        f"LINE bot blocked/unfriended by user_id={user.id} — clearing line_user_id"
     )
     user.line_user_id = None
     user.notification_enabled = False
@@ -274,6 +274,8 @@ async def notify_subscription_event(
     operator_user_id = os.environ.get(OPERATOR_LINE_USER_ID_ENV)
     if operator_user_id:
         emoji = {"subscribed": "🎉", "cancelled": "😢", "payment_failed": "⚠️"}.get(event, "ℹ️")
+        # Operator-visible notification: includes identifying info by design
+        # (only a single recipient: the operator LINE ID). Not logged.
         text = (
             f"{emoji} Price-Radar {event}\n\n"
             f"User: {user.username} (id={user.id})\n"
