@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
@@ -14,9 +14,22 @@ limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter()
 
+
+def _issue_token_and_set_cookie(response: Response, user: models.User) -> str:
+    """Issue a JWT, attach it as an HttpOnly cookie, and return the raw
+    token so legacy clients can still use it in the Authorization header.
+    """
+    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+    token = auth.create_access_token(
+        data={"sub": user.username, "user_id": user.id},
+        expires_delta=access_token_expires,
+    )
+    auth.set_auth_cookie(response, token)
+    return token
+
 @router.post("/auth/register", response_model=schemas.Token)
 @limiter.limit("3/minute")
-def register(request: Request, user: schemas.UserCreate, db: Session = Depends(get_db)):
+def register(request: Request, response: Response, user: schemas.UserCreate, db: Session = Depends(get_db)):
     """
     ユーザー新規登録 API
     
@@ -45,17 +58,13 @@ def register(request: Request, user: schemas.UserCreate, db: Session = Depends(g
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
-    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = auth.create_access_token(
-        data={"sub": new_user.username, "user_id": new_user.id},
-        expires_delta=access_token_expires,
-    )
+
+    access_token = _issue_token_and_set_cookie(response, new_user)
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.post("/auth/login", response_model=schemas.Token)
 @limiter.limit("5/minute")
-def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(request: Request, response: Response, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """
     ログイン API (OAuth2 パスワードフロー)
     
@@ -69,20 +78,24 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = auth.create_access_token(
-        data={"sub": user.username, "user_id": user.id},
-        expires_delta=access_token_expires,
-    )
+    access_token = _issue_token_and_set_cookie(response, user)
     return {"access_token": access_token, "token_type": "bearer"}
+
 
 @router.get("/auth/me", response_model=schemas.UserResponse)
 def get_me(current_user: models.User = Depends(auth.get_current_user)):
     return current_user
 
+
+@router.post("/auth/logout")
+def logout(response: Response):
+    """Clear the auth cookie. No-op for clients not using cookies."""
+    auth.clear_auth_cookie(response)
+    return {"detail": "ok"}
+
 @router.post("/auth/google", response_model=schemas.Token)
 @limiter.limit("5/minute")
-async def google_auth(request: Request, body: schemas.GoogleAuthRequest, db: Session = Depends(get_db)):
+async def google_auth(request: Request, response: Response, body: schemas.GoogleAuthRequest, db: Session = Depends(get_db)):
     """Google OAuth2 authentication: exchange code for token, get user info, create/link user."""
     client_id = os.environ.get("GOOGLE_CLIENT_ID")
     client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
@@ -175,12 +188,7 @@ async def google_auth(request: Request, body: schemas.GoogleAuthRequest, db: Ses
         db.commit()
         db.refresh(user)
 
-    # Issue JWT token
-    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
-    jwt_token = auth.create_access_token(
-        data={"sub": user.username, "user_id": user.id},
-        expires_delta=access_token_expires,
-    )
+    jwt_token = _issue_token_and_set_cookie(response, user)
     return {"access_token": jwt_token, "token_type": "bearer"}
 
 
@@ -205,7 +213,7 @@ async def _resolve_line_profile(code: str, redirect_uri: str):
 
 @router.post("/auth/line", response_model=schemas.Token)
 @limiter.limit("5/minute")
-async def line_auth(request: Request, body: schemas.LineAuthRequest, db: Session = Depends(get_db)):
+async def line_auth(request: Request, response: Response, body: schemas.LineAuthRequest, db: Session = Depends(get_db)):
     """LINE Login: 認可コードで既存ユーザー検索 or 新規作成して JWT を返す。
 
     既存ユーザーへの連携は `POST /auth/line/link` を使用（JWT 必須）。
@@ -234,11 +242,7 @@ async def line_auth(request: Request, body: schemas.LineAuthRequest, db: Session
         db.commit()
         db.refresh(user)
 
-    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
-    jwt_token = auth.create_access_token(
-        data={"sub": user.username, "user_id": user.id},
-        expires_delta=access_token_expires,
-    )
+    jwt_token = _issue_token_and_set_cookie(response, user)
     return {"access_token": jwt_token, "token_type": "bearer"}
 
 

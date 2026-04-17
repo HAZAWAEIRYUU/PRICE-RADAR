@@ -97,6 +97,53 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
+
+# CSRF defense for cookie-auth: block unsafe methods whose Origin /
+# Referer isn't in our allowlist. Stripe webhooks are exempt because
+# Stripe signs payloads (verified via stripe_signature) and comes from
+# api.stripe.com without a browser Origin header.
+import re as _re
+
+_CSRF_ALLOWED_ORIGIN_RE = _re.compile(_prod_origin_regex)
+_CSRF_ALLOWED_ORIGIN_SET = set(_dev_origins)
+_CSRF_EXEMPT_PATH_PREFIXES = (
+    "/api/stripe/webhook",
+)
+_UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _origin_is_allowed(origin: str) -> bool:
+    if not origin:
+        return False
+    if origin in _CSRF_ALLOWED_ORIGIN_SET:
+        return True
+    return bool(_CSRF_ALLOWED_ORIGIN_RE.fullmatch(origin))
+
+
+@app.middleware("http")
+async def _csrf_origin_middleware(request: Request, call_next):
+    if request.method in _UNSAFE_METHODS:
+        path = request.url.path
+        if not any(path.startswith(p) for p in _CSRF_EXEMPT_PATH_PREFIXES):
+            origin = request.headers.get("origin") or ""
+            referer = request.headers.get("referer") or ""
+            # Accept if Origin is allow-listed; if no Origin (some mobile
+            # clients, curl), fall back to Referer prefix. If neither is
+            # present we can't CSRF-check, so refuse rather than risk it.
+            allowed = False
+            if origin:
+                allowed = _origin_is_allowed(origin)
+            elif referer:
+                m = _re.match(r"(https?://[^/]+)", referer)
+                if m:
+                    allowed = _origin_is_allowed(m.group(1))
+            if not allowed:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "CSRF check failed: bad or missing Origin"},
+                )
+    return await call_next(request)
+
 # Include routers
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(products.router, prefix="/api", tags=["products"])

@@ -26,40 +26,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    const isAuth = checkAuth();
-    setAuthenticated(isAuth);
-    if (isAuth) prewarmBackend();
-    setLoading(false);
+    let cancelled = false;
+    (async () => {
+      const isAuth = await checkAuth();
+      if (cancelled) return;
+      setAuthenticated(isAuth);
+      if (isAuth) prewarmBackend();
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    // Exact or trailing slash matches for public pages
     const publicPaths = ["/", "/login", "/login/", "/signup", "/signup/", "/plans", "/plans/", "/privacy", "/privacy/", "/terms", "/terms/"];
     const authPaths = ["/login", "/login/", "/signup", "/signup/"];
-    
+
     const isPublicPath = publicPaths.includes(pathname);
     const isAuthPath = authPaths.includes(pathname);
 
-    // Skip redirects while Google OAuth callback is being processed
+    // Skip redirects while Google/LINE OAuth callback is being processed
     const hasOAuthCode = typeof window !== "undefined" && window.location.search.includes("code=");
 
     if (!loading && !hasOAuthCode) {
       if (!authenticated && !isPublicPath) {
-        // Redirect unauthenticated users trying to access protected routes
         window.location.href = "/login/";
       } else if (authenticated && isAuthPath) {
-        // Redirect authenticated users away from auth pages
         window.location.href = "/dashboard/";
       } else if (authenticated && (pathname === "/" || pathname === "")) {
-        // Redirect authenticated users from landing page to dashboard
         window.location.href = "/dashboard/";
       }
     }
   }, [authenticated, loading, pathname]);
 
   const logout = () => {
-    doLogout();
     setAuthenticated(false);
+    void doLogout();
   };
 
   if (loading) {
