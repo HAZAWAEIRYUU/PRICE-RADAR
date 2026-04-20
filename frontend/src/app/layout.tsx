@@ -17,9 +17,9 @@ const geistMono = Geist_Mono({
 // Keep it in sync with the production domain.
 const SITE_URL = "https://priceradar.space";
 const SITE_NAME = "Price-Radar";
-const SITE_TITLE = "Price-Radar | 競合価格監視システム";
+const SITE_TITLE = "Price-Radar | 競合が値下げした瞬間に LINE 通知";
 const SITE_DESCRIPTION =
-  "ECサイトの競合価格をリアルタイムに監視し、価格戦略を最適化するダッシュボード。Amazon・楽天・Yahoo!ショッピング対応、LINEで価格変動を即時通知。";
+  "Amazon・楽天・Yahoo!ショッピングの競合価格を1時間ごとに自動監視。自社より安くなった瞬間に LINE へ即時通知し、毎日の価格チェック作業をゼロにする EC 事業者向け SaaS。";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

@@ -5,7 +5,7 @@ import { ImageResponse } from "next/og";
 // and a 2:1-ish ratio, which this satisfies.
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const alt = "Price-Radar — ECサイトの競合価格をリアルタイムに監視";
+export const alt = "Price-Radar — 競合が値下げした瞬間に LINE で通知する EC 向け価格監視 SaaS";
 
 // Keeps prerender at `next build` time so `output: "export"` drops a static PNG
 // into out/opengraph-image.png, which Cloudflare Pages then serves.
@@ -101,7 +101,7 @@ export default function OpengraphImage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div
             style={{
-              fontSize: 84,
+              fontSize: 80,
               fontWeight: 800,
               lineHeight: 1.05,
               letterSpacing: "-0.02em",
@@ -109,18 +109,18 @@ export default function OpengraphImage() {
               display: "flex",
             }}
           >
-            競合価格をリアルタイム監視
+            競合の値下げを LINE で即時通知
           </div>
           <div
             style={{
-              fontSize: 36,
+              fontSize: 34,
               fontWeight: 500,
               lineHeight: 1.3,
               color: "#94a3b8",
               display: "flex",
             }}
           >
-            ECサイトの価格戦略を、データで最適化する
+            EC 事業者向け、1 時間ごとの自動価格監視 SaaS
           </div>
           <div
             style={{
