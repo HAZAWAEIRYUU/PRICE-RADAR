@@ -120,28 +120,46 @@ def _origin_is_allowed(origin: str) -> bool:
     return bool(_CSRF_ALLOWED_ORIGIN_RE.fullmatch(origin))
 
 
+# Cookie name we issue for session auth; kept in sync with auth.ACCESS_TOKEN_COOKIE.
+# Hardcoded here so the CSRF middleware doesn't have to import the auth module
+# (which triggers JWT secret validation at import time).
+_AUTH_COOKIE_NAME = "pr_access_token"
+
+
 @app.middleware("http")
 async def _csrf_origin_middleware(request: Request, call_next):
-    if request.method in _UNSAFE_METHODS:
-        path = request.url.path
-        if not any(path.startswith(p) for p in _CSRF_EXEMPT_PATH_PREFIXES):
-            origin = request.headers.get("origin") or ""
-            referer = request.headers.get("referer") or ""
-            # Accept if Origin is allow-listed; if no Origin (some mobile
-            # clients, curl), fall back to Referer prefix. If neither is
-            # present we can't CSRF-check, so refuse rather than risk it.
-            allowed = False
-            if origin:
-                allowed = _origin_is_allowed(origin)
-            elif referer:
-                m = _re.match(r"(https?://[^/]+)", referer)
-                if m:
-                    allowed = _origin_is_allowed(m.group(1))
-            if not allowed:
-                return JSONResponse(
-                    status_code=403,
-                    content={"detail": "CSRF check failed: bad or missing Origin"},
-                )
+    """Origin-based CSRF defence.
+
+    CSRF only matters when the browser is tricked into attaching the user's
+    ambient credentials to a cross-site request. Our cookie is the only such
+    credential: requests that arrive without it (CLI, mobile apps, server-
+    to-server integrations, tools that send `Authorization: Bearer`) cannot
+    be forged in a victim's browser, so they're exempt. Cookie-bearing
+    requests must present an allow-listed Origin (or Referer fallback).
+    """
+    if request.method not in _UNSAFE_METHODS:
+        return await call_next(request)
+    path = request.url.path
+    if any(path.startswith(p) for p in _CSRF_EXEMPT_PATH_PREFIXES):
+        return await call_next(request)
+    # No ambient credential -> no CSRF surface.
+    if not request.cookies.get(_AUTH_COOKIE_NAME):
+        return await call_next(request)
+
+    origin = request.headers.get("origin") or ""
+    referer = request.headers.get("referer") or ""
+    allowed = False
+    if origin:
+        allowed = _origin_is_allowed(origin)
+    elif referer:
+        m = _re.match(r"(https?://[^/]+)", referer)
+        if m:
+            allowed = _origin_is_allowed(m.group(1))
+    if not allowed:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "CSRF check failed: bad or missing Origin"},
+        )
     return await call_next(request)
 
 # Include routers
