@@ -120,9 +120,9 @@ export default function LandingPage() {
           </h1>
 
           <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
-            Amazon・楽天・Yahoo ショッピングの競合価格を自動監視。
+            Amazon・楽天・Yahoo ショッピングの競合価格を 1 時間ごとに自動チェック。
             <br className="hidden sm:block" />
-            価格変動をリアルタイムに検知し、最適な価格戦略をサポートします。
+            自社より安くなった瞬間に LINE へ即時通知、毎日 30 分の価格パトロールをゼロに。
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
