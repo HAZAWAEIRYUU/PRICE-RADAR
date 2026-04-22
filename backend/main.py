@@ -39,6 +39,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from scraper.tasks import run_scheduled_scraping, cleanup_old_history
+from services.rls_guard import ensure_rls_enabled
 
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
@@ -55,6 +56,9 @@ scheduler.add_job(cleanup_old_history, "interval", hours=24)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    # Re-assert RLS on every boot so an out-of-band disable (Supabase
+    # dashboard toggle, PITR, branch swap) self-heals on next deploy.
+    ensure_rls_enabled(engine)
     logger.info("Starting background scheduler")
     scheduler.start()
     yield
